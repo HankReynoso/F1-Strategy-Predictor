@@ -1,19 +1,29 @@
 # 09: Break ties between mirrored Strategies
 
-**What to build:** Make the order of Compounds affect Simulated Race Time, so that mirrored Strategies (e.g. M → H and H → M) no longer tie exactly. Today nothing in the model depends on which Compound comes first, so every mirrored pair has identical Simulated Race Time, is always kept or pruned together by the Plausible margin, and splits probability evenly. Real teams usually start on the softer Compound of a pair, so the tie costs Strategy Match.
+**What to build:** Mirrored Strategies (e.g. M → H and H → M) get different probabilities, with the softer-first mirror favoured wherever history says drivers usually start on the softer Compound of the pair. The tie breaks through Circuit Tendency, not through Simulated Race Time: mirrored Strategies keep identical Simulated Race Times, and Circuit Tendency's weighting, which counts each ordered Compound sequence separately, separates them. In practice this ticket is delivered by the Circuit Tendency work (ADR-0001); it stays open as a check that the tie is actually broken.
 
-**Blocked by:** None for the decision; likely implemented alongside fuel correction (02/03) or Compound pace (spec Open questions).
+**Blocked by:** The Circuit Tendency spec and its tickets (not yet written; it comes after the full Backtest).
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
-Options to decide between (needs a modelling choice, possibly via `/domain-modeling`):
-- Fuel load: the first Stint runs heavier, so Degradation (or pace) costs more early, favouring a harder Compound or shorter first Stint.
-- Compound pace: softer Compounds are quicker when fresh, which matters most at the start where track position counts.
-- A starting-Compound rule or tendency from history (overlaps Circuit Tendency, ADR-0001).
-
-- [ ] Mirrored Strategies get different Simulated Race Times on a hand-built weekend
-- [ ] The chosen mechanism is recorded in the spec and, if new, in `CONTEXT.md`
+- [ ] On a hand-built weekend with history where drivers mostly started on the softer Compound, the softer-first mirror gets the higher probability
+- [ ] With no history for a circuit, mirrored Strategies still split evenly (no invented preference)
+- [ ] The Backtest reports top-1 Strategy Match before and after Circuit Tendency, so the gain from breaking mirrored ties is visible
 - [ ] All tests go through the main seam
+
+## Decision (2026-10-20)
+
+Chosen: break mirrored ties with history, as part of Circuit Tendency. Until then, accept the 50/50 split.
+
+Reasoning:
+- Teams start on the softer Compound mainly for launch grip and early track position, and to keep the harder Compound for the end. The current simulation has no traffic or track position, so nothing in it can reproduce that preference honestly.
+- Circuit Tendency is already defined over ordered Compound sequences, so it distinguishes M → H from H → M without any new concept or glossary term.
+- Leaving the tie in the pure-simulation version keeps the "before" Backtest number honest: the top-1 Strategy Match it loses to mirrored ties is exactly what Circuit Tendency should win back.
+
+Rejected:
+- **Degradation that grows with fuel load.** Physically real, but it makes running the hard-wearing Compound on the heavy first Stint cheaper, so it favours hard-first, the opposite of what teams usually do. Kept as a separate later accuracy refinement (spec Open questions), not a fix for this ticket.
+- **A pace advantage for softer Compounds.** A constant per-Compound pace term adds the same total whatever the order (see the ticket 02 comment below). It would only favour softer-first once the simulation values early track position, which needs traffic and undercuts.
+- **A hard-coded "softer first" rule.** Simple, but it ignores circuits and seasons where teams do start on the harder Compound, and it duplicates what Circuit Tendency will learn from data.
 
 ## Comments
 
