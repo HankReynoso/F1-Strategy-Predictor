@@ -63,3 +63,5 @@
   - *Sprint weekend:* Austin 2024 loads sessions `FP1, SQ, S, Q`. The Sprint ran 19 laps (100 km at COTA) with 18+ drivers, and the race is 56 laps.
   - *Repeat loads:* a second Monza load with every HTTP request refused returns a weekend equal to the first. Also checked that the test can fail: the same blocked load against an empty cache raises (`Failed to load any schedule data`).
   - Expected values come from outside the loader: race-control messages for the SC laps, and the official distances for the race and sprint lengths.
+
+**Cache removed from main (2026-10-20).** The `fastf1-cache-2022` branch had been merged into main, putting 6.7 MB of binary FastF1 cache files (including `fastf1_http_cache.sqlite`) under version control despite `.cache/` being gitignored. They were untracked from main at the user's request; the `fastf1-cache-2022` branch is kept as the source of Monza 2022 data. `livetiming-mirror.fastf1.dev` was still proxy-denied at the time, so cloud sessions that need 2022 data should restore it with `git fetch origin fastf1-cache-2022 && git archive origin/fastf1-cache-2022 .cache/fastf1/2022 | tar -x` until the mirror is allowlisted.
