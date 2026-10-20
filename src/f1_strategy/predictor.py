@@ -7,6 +7,7 @@ from itertools import product
 from .degradation import DegradationEstimate, base_lap_time, team_degradation
 from .settings import Settings
 from .simulator import simulate, stop_windows
+from .tyre_allocation import can_run, remaining_sets
 from .weekend import DRY_COMPOUNDS, Compound, RaceWeekend
 
 
@@ -45,6 +46,7 @@ class StrategyPrediction:
     driver: str
     candidates: tuple[CandidateStrategy, ...]
     team_degradation: dict[Compound, DegradationEstimate]
+    remaining_sets: dict[Compound, int]
 
 
 def legal_strategies() -> list[Strategy]:
@@ -66,13 +68,21 @@ def predict(
     pre_race = weekend.pre_race
     team_rates = team_degradation(pre_race, settings)
     base = base_lap_time(pre_race, settings)
+    driver_remaining = remaining_sets(pre_race)
 
     predictions: dict[str, StrategyPrediction] = {}
     for driver, team in pre_race.teams.items():
         estimates = team_rates[team]
         rates = {c: e.rate for c, e in estimates.items()}
         predictions[driver] = _predict_driver(
-            driver, estimates, rates, pre_race.race_laps, pre_race.pit_loss, base, settings
+            driver,
+            estimates,
+            rates,
+            pre_race.race_laps,
+            pre_race.pit_loss,
+            base,
+            driver_remaining[driver],
+            settings,
         )
     return predictions
 
@@ -84,10 +94,13 @@ def _predict_driver(
     race_laps: int,
     pit_loss: float,
     base: float,
+    remaining: dict[Compound, int],
     settings: Settings,
 ) -> StrategyPrediction:
     simulated = []
     for strategy in legal_strategies():
+        if not can_run(strategy.compounds, remaining):
+            continue
         race = simulate(strategy.compounds, rates, race_laps, pit_loss, base)
         simulated.append((strategy, race))
 
@@ -121,7 +134,7 @@ def _predict_driver(
         )
         for (strategy, race), weight in zip(simulated, weights)
     )
-    return StrategyPrediction(driver, candidates, estimates)
+    return StrategyPrediction(driver, candidates, estimates, dict(remaining))
 
 
 def _require_dry_race(weekend: RaceWeekend) -> None:

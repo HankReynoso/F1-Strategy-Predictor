@@ -43,9 +43,12 @@ def test_every_driver_gets_a_strategy_prediction_summing_to_100_percent():
 
 
 def test_candidate_strategies_are_every_legal_1_to_3_stop_strategy_and_never_single_compound():
-    # An unlimited Plausible margin shows every legal Strategy before pruning.
+    # An unlimited Plausible margin and a generous Tyre Allocation show every
+    # legal Strategy before pruning by either rule.
+    big_allocation = {S: 20, M: 20, H: 20}
     prediction = predict(
-        weekend(standard_practice(), TEAMS), Settings(plausible_margin_s=math.inf)
+        _allocation_weekend(standard_practice(), TEAMS, tyre_allocation=big_allocation),
+        Settings(plausible_margin_s=math.inf),
     )["VER"]
     strategies = [c.strategy for c in prediction.candidates]
 
@@ -134,9 +137,11 @@ def test_a_two_stop_stop_window_lets_the_other_stop_move_to_suit():
     # best. Holding the other stop fixed would give only 18-26 and 31-39.
     prediction = predict(
         weekend(standard_practice(), TEAMS), Settings(stop_window_margin_s=1.0)
-    )["VER"]
+    )
 
-    first, second = candidate(prediction, H, M, H).stops
+    # PER did no practice, so has the full allocation (2H, 3M, 8S) and can
+    # still run H-M-H; VER has used 1 new Hard and would lose this strategy.
+    first, second = candidate(prediction["PER"], H, M, H).stops
     assert (first.first_lap, first.best_lap, first.last_lap) == (17, 22, 27)
     assert (second.first_lap, second.best_lap, second.last_lap) == (30, 35, 40)
 
@@ -524,3 +529,175 @@ def test_minimum_long_run_length_is_a_setting_with_a_default():
     assert default["VER"].team_degradation[S].source == DegradationSource.FIELD_AVERAGE
     assert short["VER"].team_degradation[S].source == DegradationSource.LONG_RUNS
     assert short["VER"].team_degradation[S].rate == pytest.approx(0.1, abs=1e-6)
+
+
+# --- Ticket 04: Remaining Sets ------------------------------------------------
+
+
+def _allocation_weekend(laps, teams, tyre_allocation=None, race_laps=57):
+    """Weekend with an explicit per-driver Tyre Allocation override."""
+    return RaceWeekend(
+        pre_race=PreRaceInfo(
+            circuit="Test Circuit",
+            season=2024,
+            race_laps=race_laps,
+            is_sprint_weekend=False,
+            sessions=(Session(name="FP2", laps=tuple(laps)),),
+            teams=teams,
+            pit_loss=22.0,
+            tyre_allocation=tyre_allocation,
+        ),
+        race=RaceOutcome(stints=(), neutralisations=()),
+    )
+
+
+def test_default_allocation_rules_out_only_strategies_that_overshoot_a_compound():
+    # PER drives nothing in practice; with the default allocation (8S, 3M,
+    # 2H), the only strategies excluded by Remaining Sets are those needing
+    # more than the allocation of some compound — in practice, 4-stint
+    # strategies calling for 3+ Hards.
+    prediction = predict(
+        weekend(standard_practice(), TEAMS), Settings(plausible_margin_s=math.inf)
+    )["PER"]
+    strategies = [c.strategy.compounds for c in prediction.candidates]
+
+    for compounds in strategies:
+        assert compounds.count(H) <= 2
+        assert compounds.count(M) <= 3
+        assert compounds.count(S) <= 8
+    # 108 legal strategies minus 8 four-stint strategies needing 3 Hards
+    # (X-H-H-H and its three rotations for X in {S, M}).
+    assert len(strategies) == 100
+
+
+def test_a_driver_short_of_a_compound_loses_strategies_needing_more_of_it():
+    # Allocation of 2H, 3M, 8S. VER's three Long Runs each start on a new
+    # set, so VER has used 1 S, 1 M, 1 H and now has 7S / 2M / 1H.
+    # Strategies needing 2 Hards (H-H, H-X-H, X-H-H, 3-stop variants with
+    # two or more Hards) must disappear for VER. PER did nothing in
+    # practice and still has 2H, so those strategies remain for PER.
+    predictions = predict(
+        weekend(standard_practice(), TEAMS), Settings(plausible_margin_s=math.inf)
+    )
+    ver_sets = {c.strategy.compounds for c in predictions["VER"].candidates}
+    per_sets = {c.strategy.compounds for c in predictions["PER"].candidates}
+
+    needs_two_hards = {s for s in per_sets if s.count(H) >= 2}
+    assert needs_two_hards, "sanity: PER keeps strategies needing 2+ Hards"
+    assert needs_two_hards.isdisjoint(ver_sets)
+    # Everything VER has, PER has too (PER's Remaining Sets dominate VER's).
+    assert ver_sets < per_sets
+
+
+def test_teammates_with_identical_degradation_can_get_different_predictions_from_tyre_usage():
+    # VER and PER are both on Red Bull with the same team Degradation. Each
+    # drives one Soft, Medium and Hard Long Run; identical practice usage,
+    # identical predictions. Then PER runs a SECOND new Hard: PER has 0
+    # Hards remaining, VER still has 1, and every strategy using a Hard
+    # falls away for PER but not VER.
+    #
+    # The allocation is overridden to effectively unbounded Soft and Medium
+    # so the only binding constraint is the Hard count: it keeps the test
+    # focused on the one difference between the drivers.
+    hard_only = {S: 100, M: 100, H: 2}
+    base_laps = [
+        *degrading_run("VER", "VER-S1", S, 0.12),
+        *degrading_run("VER", "VER-M1", M, 0.07, first_lap=20),
+        *degrading_run("VER", "VER-H1", H, 0.04, first_lap=40),
+        *degrading_run("PER", "PER-S1", S, 0.12),
+        *degrading_run("PER", "PER-M1", M, 0.07, first_lap=20),
+        *degrading_run("PER", "PER-H1", H, 0.04, first_lap=40),
+    ]
+    matched = predict(
+        _allocation_weekend(base_laps, TEAMS, tyre_allocation=hard_only),
+        Settings(plausible_margin_s=math.inf),
+    )
+    assert (
+        {c.strategy.compounds for c in matched["VER"].candidates}
+        == {c.strategy.compounds for c in matched["PER"].candidates}
+    )
+
+    diverged = predict(
+        _allocation_weekend(
+            [*base_laps, *degrading_run("PER", "PER-H2", H, 0.04, first_lap=60)],
+            TEAMS,
+            tyre_allocation=hard_only,
+        ),
+        Settings(plausible_margin_s=math.inf),
+    )
+    ver_sets = {c.strategy.compounds for c in diverged["VER"].candidates}
+    per_sets = {c.strategy.compounds for c in diverged["PER"].candidates}
+
+    assert diverged["VER"].remaining_sets[H] == 1
+    assert diverged["PER"].remaining_sets[H] == 0
+    assert per_sets < ver_sets
+    assert all(H not in strategy for strategy in per_sets)
+    assert any(H in strategy for strategy in ver_sets)
+
+
+def test_strategies_needing_more_of_a_compound_than_the_allocation_are_excluded_for_everyone():
+    # Override the allocation to 1 Hard total. Even a driver who did nothing
+    # in practice cannot run two Hards, so strategies needing 2+ Hards
+    # disappear across the board.
+    one_hard = {S: 8, M: 3, H: 1}
+    predictions = predict(
+        _allocation_weekend(standard_practice(), TEAMS, tyre_allocation=one_hard),
+        Settings(plausible_margin_s=math.inf),
+    )
+
+    for name, prediction in predictions.items():
+        for cand in prediction.candidates:
+            assert cand.strategy.compounds.count(H) <= 1, name
+
+
+def test_used_sets_do_not_restore_capacity_lost_to_new_set_usage():
+    # Pruning counts new sets only. A stint fitted on a used set does not
+    # subtract from the allocation, so a driver who ran a Long Run on a
+    # used Hard still has their full 2 new Hards available for the race.
+    used_hard_run = [
+        Lap(
+            driver="VER",
+            lap_number=1 + i,
+            lap_time=90.0 + 0.04 * i,
+            tyre_set="VER-used-H1",
+            compound=H,
+            tyre_age=5 + i,  # fitted at age 5 (not fresh)
+            new_when_fitted=False,
+        )
+        for i in range(8)
+    ]
+    laps = [
+        *degrading_run("VER", "VER-S1", S, 0.12, first_lap=20),
+        *degrading_run("VER", "VER-M1", M, 0.07, first_lap=40),
+        *used_hard_run,
+        # PER drives nothing.
+    ]
+    predictions = predict(
+        weekend(laps, TEAMS), Settings(plausible_margin_s=math.inf)
+    )
+
+    # No new Hards consumed by VER; VER's remaining Hards still equals the
+    # allocation. If it didn't, strategies needing 2 Hards would disappear.
+    assert predictions["VER"].remaining_sets[H] == 2
+    assert predictions["PER"].remaining_sets[H] == 2
+    needs_two_hards = {
+        c.strategy.compounds
+        for c in predictions["VER"].candidates
+        if c.strategy.compounds.count(H) == 2
+    }
+    assert needs_two_hards, "sanity: VER can still run strategies with 2 Hards"
+
+
+def test_remaining_sets_are_reported_on_the_prediction():
+    # VER's Long Runs on each compound (all new sets) consume 1 of each.
+    predictions = predict(
+        weekend(standard_practice(), TEAMS), Settings(plausible_margin_s=math.inf)
+    )
+
+    # By default the allocation is 8S / 3M / 2H.
+    assert predictions["VER"].remaining_sets == {S: 7, M: 2, H: 1}
+    assert predictions["PER"].remaining_sets == {S: 8, M: 3, H: 2}
+
+
+# Keep the import linter from pruning Lap: used in the used-sets test.
+from f1_strategy import Lap  # noqa: E402

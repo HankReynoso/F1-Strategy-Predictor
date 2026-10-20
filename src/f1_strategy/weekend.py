@@ -55,6 +55,9 @@ class PreRaceInfo:
     sessions: tuple[Session, ...]
     teams: dict[str, str]  # driver -> team, for every driver who starts
     pit_loss: float  # seconds lost per pit stop at this circuit
+    # New sets of each dry Compound allocated to every driver this weekend.
+    # None means use the FIA regulation default for the weekend format.
+    tyre_allocation: dict["Compound", int] | None = None
 
 
 @dataclass(frozen=True)
