@@ -49,8 +49,12 @@ The lap time a Compound loses per lap as it wears.
 _Avoid_: deg (fine in speech), tyre wear, drop-off
 
 **Long Run**:
-A practice Stint run at race pace on a heavy fuel load, used to measure Degradation. On sprint weekends, sprint race Stints also count as Long Runs.
+A practice Stint of consistently timed consecutive laps at race pace on a heavy fuel load, used to measure Degradation. On sprint weekends, sprint race Stints also count as Long Runs.
 _Avoid_: race sim, race run
+
+**Push Lap**:
+A single flat-out lap in practice, recognisable as a fast lap between slower preparation and cool-down laps. Several Push Laps may be done on one Tyre Set. Push Laps are not part of a Long Run.
+_Avoid_: quali sim, hot lap, flying lap
 
 **Pit Loss**:
 The race time a driver loses by making one pit stop at a given circuit, compared with staying out.
