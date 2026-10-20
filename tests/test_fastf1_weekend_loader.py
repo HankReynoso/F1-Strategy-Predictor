@@ -1,16 +1,19 @@
 """Seam 2: FastF1 real-weekend → race weekend description.
 
-These tests load one cached real race (Monza 2024) through the public
-loader and check that the description is sensible. They are marked
-`slow` because they hit the FastF1 on-disk cache and, on a cold cache,
-the live timing API.
+These tests load cached real 2024 weekends through the public loader and
+check that the description is sensible: Monza (conventional, green race),
+Jeddah (Safety Car after Stroll's lap-7 crash) and Austin (sprint weekend).
+They are marked `slow` because they hit the FastF1 on-disk cache and, on a
+cold cache, the live timing API.
 """
 
 from pathlib import Path
 
 import pytest
+import requests
 
-from f1_strategy import Compound, RaceWeekend
+from f1_strategy import Compound, NeutralisationPeriod, RaceWeekend
+from f1_strategy.fastf1_loader import load_weekend
 
 pytestmark = pytest.mark.slow
 
@@ -19,9 +22,17 @@ CACHE_DIR = Path(__file__).resolve().parents[1] / ".cache" / "fastf1"
 
 @pytest.fixture(scope="module")
 def monza_2024() -> RaceWeekend:
-    from f1_strategy.fastf1_loader import load_weekend
-
     return load_weekend(2024, "Italian Grand Prix", cache_dir=CACHE_DIR)
+
+
+@pytest.fixture(scope="module")
+def jeddah_2024() -> RaceWeekend:
+    return load_weekend(2024, "Saudi Arabian Grand Prix", cache_dir=CACHE_DIR)
+
+
+@pytest.fixture(scope="module")
+def austin_2024() -> RaceWeekend:
+    return load_weekend(2024, "United States Grand Prix", cache_dir=CACHE_DIR)
 
 
 def test_loads_as_a_race_weekend(monza_2024: RaceWeekend) -> None:
@@ -106,10 +117,44 @@ def test_pit_loss_never_includes_the_race_being_predicted() -> None:
         )
 
 
-def test_repeat_loads_come_from_the_local_cache(monza_2024: RaceWeekend) -> None:
-    # The first load (via the fixture) populates the cache. A second load must
-    # not need the network — we check by looking for FastF1 cache artefacts.
-    import fastf1
+def test_practice_laps_under_only_yellow_or_red_flags_are_not_neutralised(
+    monza_2024: RaceWeekend,
+) -> None:
+    # Monza 2024's practice and qualifying had yellow (2) and red (5) flags
+    # but no Safety Car (4) or VSC (6/7) codes, so no lap is neutralised.
+    all_laps = [lap for s in monza_2024.pre_race.sessions for lap in s.laps]
+    assert not [lap for lap in all_laps if lap.neutralised]
 
-    cache_files = list(Path(fastf1.Cache._CACHE_DIR).rglob("*.ff1pkl"))
-    assert cache_files
+
+def test_safety_car_period_matches_race_control(jeddah_2024: RaceWeekend) -> None:
+    # Race control: "SAFETY CAR DEPLOYED" on lap 7 after Stroll's crash,
+    # "SAFETY CAR IN THIS LAP" on lap 9. No other SC or VSC in the race.
+    assert jeddah_2024.race.neutralisations == (
+        NeutralisationPeriod(kind="SC", start_lap=7, end_lap=9),
+    )
+
+
+def test_sprint_weekend_includes_sprint_qualifying_and_the_sprint(
+    austin_2024: RaceWeekend,
+) -> None:
+    pre_race = austin_2024.pre_race
+    assert pre_race.is_sprint_weekend is True
+    assert [s.name for s in pre_race.sessions] == ["FP1", "SQ", "S", "Q"]
+    assert pre_race.race_laps == 56
+
+    sprint = next(s for s in pre_race.sessions if s.name == "S")
+    assert max(lap.lap_number for lap in sprint.laps) == 19  # 100 km at COTA
+    assert len({lap.driver for lap in sprint.laps}) >= 18
+
+
+def test_repeat_loads_come_from_the_local_cache(
+    monza_2024: RaceWeekend, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The fixture's load filled the cache; a repeat load with every HTTP
+    # request refused must still produce the same weekend.
+    def refuse(*args, **kwargs):
+        raise requests.ConnectionError("network disabled for this test")
+
+    monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", refuse)
+
+    assert load_weekend(2024, "Italian Grand Prix", cache_dir=CACHE_DIR) == monza_2024

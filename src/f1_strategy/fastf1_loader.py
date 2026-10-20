@@ -45,10 +45,9 @@ _SESSION_SHORT_NAME = {
     "Sprint Shootout": "SS",
 }
 
-# Neutralisation codes in `Session.track_status`. "1" is green, "6"/"7" are
-# yellows the simulator ignores. We treat 4 (SC) and 5 (red flag) and 6/7
-# (VSC pending/active) as neutralised; the SC/VSC distinction is reported
-# in NeutralisationPeriod.kind.
+# A lap's TrackStatus concatenates every code seen during it (e.g. "124").
+# Only SC (4) and VSC (6 deployed, 7 ending) neutralise; yellow (2) and
+# red flag (5) do not.
 _SC_STATUS = {"4"}
 _VSC_STATUS = {"6", "7"}
 
@@ -165,7 +164,8 @@ def _laps_from(session, session_name: str, drivers: set[str]) -> Iterable[Lap]:
             new_when_fitted=bool(row.get("FreshTyre")),
             pit_in=not pd.isna(row.get("PitInTime")),
             pit_out=not pd.isna(row.get("PitOutTime")),
-            neutralised=str(row.get("TrackStatus", "1")) not in ("1", "2"),
+            neutralised=_lap_neutralisation_kind(str(row.get("TrackStatus", "1")))
+            is not None,
         )
 
 
@@ -194,46 +194,29 @@ def _race_stints(race, drivers: set[str]) -> tuple[Stint, ...]:
 
 
 def _neutralisation_periods(race) -> tuple[NeutralisationPeriod, ...]:
-    """Group race track-status flags into SC/VSC periods, labelled by lap."""
+    """Group race track-status flags into SC/VSC periods, labelled by lap.
+
+    Race laps are counted by the leader, so each lap's status is read from
+    the first car to complete it. Other cars' laps straddle the leader's and
+    would stretch periods (e.g. a crashed car's unfinished lap).
+    """
     df = race.laps
     if df is None or df.empty:
         return ()
-    # TrackStatus is a string of codes per lap, one per driver per lap. We
-    # fold them to a single status per lap: a lap is SC if any driver sees
-    # an SC code during it, else VSC if any sees VSC, else green.
-    per_lap: dict[int, str] = {}
-    for _, row in df.iterrows():
-        lap = int(row["LapNumber"])
-        status = str(row.get("TrackStatus", "1"))
-        kind = _lap_neutralisation_kind(status)
-        if kind == "SC":
-            per_lap[lap] = "SC"
-        elif kind == "VSC" and per_lap.get(lap) != "SC":
-            per_lap[lap] = "VSC"
-        else:
-            per_lap.setdefault(lap, "")
+    completed = df[df["Time"].notna()]
+    leader_laps = completed.loc[completed.groupby("LapNumber")["Time"].idxmin()]
 
     periods: list[NeutralisationPeriod] = []
-    current_kind: str | None = None
-    start_lap: int | None = None
-    for lap in sorted(per_lap):
-        kind = per_lap[lap] or None
-        if kind != current_kind:
-            if current_kind and start_lap is not None:
-                periods.append(
-                    NeutralisationPeriod(
-                        kind=current_kind, start_lap=start_lap, end_lap=lap - 1
-                    )
-                )
-            current_kind = kind
-            start_lap = lap if kind else None
-    if current_kind and start_lap is not None:
-        last_lap = max(per_lap)
-        periods.append(
-            NeutralisationPeriod(
-                kind=current_kind, start_lap=start_lap, end_lap=last_lap
-            )
-        )
+    for _, row in leader_laps.sort_values("LapNumber").iterrows():
+        lap = int(row["LapNumber"])
+        kind = _lap_neutralisation_kind(str(row["TrackStatus"]))
+        if kind is None:
+            continue
+        last = periods[-1] if periods else None
+        if last and last.kind == kind and last.end_lap == lap - 1:
+            periods[-1] = NeutralisationPeriod(kind, last.start_lap, lap)
+        else:
+            periods.append(NeutralisationPeriod(kind, lap, lap))
     return tuple(periods)
 
 
