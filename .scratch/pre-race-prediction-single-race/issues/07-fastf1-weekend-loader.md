@@ -15,3 +15,9 @@
 - [ ] Pit Loss is computed from previous seasons' races at the circuit and excludes the race itself
 - [ ] Repeat loads come from the local cache
 - [ ] A small number of tests check one cached real race; they can be marked as slower tests
+
+## Comments
+
+**From ticket 01 (2026-10-19).** - Tyre Set identity (`Lap.tyre_set`): as far as I know, FastF1 doesn't expose a Tyre Set ID that persists across sessions. Its laps give stint number, Compound, tyre life and fresh/used. Verify this first. If it holds, set identity has to be reconstructed (e.g. matching a used set's tyre life to an earlier set's last lap), which affects how far ticket 04 can trust Remaining Sets.
+- `PreRaceInfo.pit_loss` is a single number in seconds. `PreRaceInfo.teams` should hold only drivers who started the race, since `predict()` produces a prediction for every key.
+- The Dry Race guard reads `RaceOutcome.stints` Compounds, so Stints must carry the actual Compound (including Intermediate and Wet) for the refusal to work.

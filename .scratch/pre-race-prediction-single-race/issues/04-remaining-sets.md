@@ -10,3 +10,9 @@
 - [ ] A Candidate Strategy needing more sets of a Compound than a driver has left never appears for that driver
 - [ ] Two teammates with identical Degradation but different Remaining Sets get different predictions
 - [ ] All tests go through the main seam
+
+## Comments
+
+**From ticket 01 (2026-10-19).** The simulator (`src/f1_strategy/simulator.py`) assumes every Stint starts on a new Tyre Set at tyre age 0. Once used sets are in play, a Stint on a used set should start at that set's tyre age, which changes its Degradation cost and so the best stop laps. The data already carries `Lap.tyre_age` and `Lap.new_when_fitted`.
+
+Whether Remaining Sets can be tracked across sessions depends on Tyre Set identity being reliable; see the note on ticket 07.

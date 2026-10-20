@@ -36,3 +36,5 @@ The predictor refuses a weekend that isn't a Dry Race, and reads only pre-race i
 - Choices beyond the ticket's letter: a fitted Degradation below zero is clamped to 0; a dry Compound with no Long Runs takes the mean of the measured Compounds (proper field-average and Push Lap fallbacks come in 02/03).
 - Known gap for later tickets: there is no Compound pace offset (Softs being quicker when fresh), so Softs only win on Degradation and rarely feature in favourites.
 - The Dry Race guard reads the race's Stint Compounds only to decide whether to predict at all; the prediction itself reads only `pre_race`.
+
+**From ticket 01 (2026-10-19).** Follow-up notes from this implementation have been filed where they'll be acted on: Compound pace and the base-pace placeholder (spec Open questions, 02), qualifying laps counting as Long Runs (03), Stints assumed to start on new tyres (04), mirrored-Strategy ties and how Stop Windows interact with stop-lap optimisation (05), retirements not being derivable from Stints (06), and Tyre Set identity in FastF1 (07). `done` has been added to `docs/agents/triage-labels.md`.

@@ -124,7 +124,7 @@ This is the thin end-to-end slice that later specs build on: the full Backtest a
   - A weekend with Intermediate laps in the race is refused.
 - **Comparison tests, also through seam 1's public calls.** Hand-built actual Stints check top-1 and top-3 Strategy Match, Stop Window hits scored independently, the Neutralised Race flag, and unscoreable drivers.
 - **Seam 2 (thin): FastF1 weekend → race weekend description.** A small number of tests load one real, cached 2024 race and check the description is sensible: all starters present, Tyre Sets and Compounds populated, race laps match the official distance, practice sessions included. These guard against FastF1 data quirks. They can be marked as slower tests and rely on the local FastF1 cache.
-- **Prior art.** The repo has no code yet, so these tests set the pattern. Use the `tdd` skill's red-green-refactor approach at seam 1.
+- **Prior art.** Ticket 01 set the pattern: `tests/test_pre_race_prediction.py` tests only through `predict()`, using the hand-built weekend helpers in `tests/weekend_builder.py`, with expected values worked out by hand in comments. Use the `tdd` skill's red-green-refactor approach at seam 1.
 
 ## Out of Scope
 
@@ -141,3 +141,11 @@ This is the thin end-to-end slice that later specs build on: the full Backtest a
 - Domain vocabulary follows `CONTEXT.md`. Use its terms (Strategy, Stint, Compound, Stop Window, Long Run, Push Lap, Remaining Sets, Pit Loss, Simulated Race Time, Plausible, Strategy Match, Neutralised Race) in code names, test names and output.
 - ADR-0001 sets the direction: this spec is deliberately the simulation half only. Results from this version are the "before" number that Circuit Tendency will be measured against.
 - FastF1 detailed timing and tyre data is available from 2018 onward. Pit Loss for the chosen race should draw on recent previous seasons at that circuit (2022+, current regulations), weighted toward recent seasons where enough data exists.
+
+## Open questions
+
+Raised while implementing ticket 01 (2026-10-19). Not yet decided.
+
+- **Compound pace.** User story 31 defines Simulated Race Time from Degradation, fuel effect and Pit Loss only. It leaves out that softer Compounds are quicker when fresh. Without that, Softs only win on low Degradation and almost never appear as favourites, which will hurt Strategy Match. The term isn't in `CONTEXT.md` yet; if it's adopted, settle the name via `/domain-modeling`. Ticket 02 is the natural place to add it, since per-team fits produce a pace intercept per Compound.
+- **Base pace placeholder.** Simulated Race Time includes race laps × the fastest Long Run lap in the field. It doesn't affect rankings (it's the same for all of a driver's Candidate Strategies) but means the absolute time isn't a real estimate. Fine until a car-pace model exists, which this spec rules out.
+- **Mirrored Strategies tie.** M → H and H → M always have identical Simulated Race Times because nothing depends on Compound order. See ticket 05.

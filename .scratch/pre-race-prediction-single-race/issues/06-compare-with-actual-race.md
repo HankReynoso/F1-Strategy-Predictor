@@ -14,3 +14,7 @@
 - [ ] Retired drivers and drivers who never stopped are unscoreable and excluded from the summary counts
 - [ ] A race summary reports top-1, top-3 and Stop Window hit counts out of scoreable drivers
 - [ ] Tests use hand-built predictions and actual Stints through the public calls
+
+## Comments
+
+**From ticket 01 (2026-10-19).** The race weekend description's `Stint` has driver, Compound, start lap and end lap, and `NeutralisationPeriod` has kind and laps. There is no finishing status, so "retired" can only be inferred from a last Stint ending before `PreRaceInfo.race_laps`. That misses lapped finishers (who end on fewer laps without retiring). Consider adding a finishing status to `RaceOutcome`, populated by the loader in 07.
