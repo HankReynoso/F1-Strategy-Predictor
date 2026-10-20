@@ -14,6 +14,7 @@ from weekend_builder import (
 from f1_strategy import (
     Compound,
     DegradationSource,
+    HistoricalDegradation,
     Lap,
     NeutralisationPeriod,
     NotDryRaceError,
@@ -996,3 +997,143 @@ def test_drivers_with_runnable_strategies_keep_new_only_rule():
     predictions = predict(weekend(standard_practice(), TEAMS))
     for prediction in predictions.values():
         assert prediction.remaining_sets_rule is RemainingSetsRule.NEW_ONLY
+
+
+# ---------------------------------------------------------------------------
+# Ticket 11: no Degradation estimate when nobody runs a Compound in practice.
+# Falls back to previous seasons' race Stints at the circuit, then to the
+# next-softer Compound's field-average Degradation as an upper bound.
+# ---------------------------------------------------------------------------
+
+
+def _soft_and_medium_only(driver: str, prefix: str) -> list[Lap]:
+    """Long Runs on Softs and Mediums for one driver. No Hard running at all,
+    so the Hard rate must come from a later fallback step."""
+    return [
+        *long_run(driver, f"{prefix}-S1", S, [90.0 + 0.1 * i for i in range(8)]),
+        *long_run(
+            driver, f"{prefix}-M1",
+            M,
+            [90.0 + 0.05 * i for i in range(8)],
+            first_lap=20,
+        ),
+    ]
+
+
+def test_history_sourced_rate_used_when_no_team_runs_the_compound():
+    # No team runs the Hard in practice but the loader has historical Hard
+    # Degradation from previous seasons at the circuit: every team's Hard
+    # estimate equals the historical rate, with CIRCUIT_HISTORY as the source.
+    teams = {"VER": "Red Bull Racing", "LEC": "Ferrari"}
+    laps = [*_soft_and_medium_only("VER", "VER"), *_soft_and_medium_only("LEC", "LEC")]
+    history = {
+        H: HistoricalDegradation(rate=0.08, seasons=(2023,), stint_count=5),
+    }
+
+    predictions = predict(weekend(laps, teams, historical_degradation=history), NO_FUEL)
+
+    for driver in teams:
+        hard = predictions[driver].team_degradation[H]
+        assert hard.source == DegradationSource.CIRCUIT_HISTORY
+        assert hard.rate == pytest.approx(0.08, abs=1e-9)
+
+
+def test_next_softer_bound_used_when_no_history():
+    # Same unrun-Hard weekend, this time with no history. Hard falls to the
+    # next-softer bound: the Medium field-average rate (0.05 + fuel; here
+    # NO_FUEL, so just 0.05). Both teams see the same bound.
+    teams = {"VER": "Red Bull Racing", "LEC": "Ferrari"}
+    laps = [*_soft_and_medium_only("VER", "VER"), *_soft_and_medium_only("LEC", "LEC")]
+
+    predictions = predict(weekend(laps, teams), NO_FUEL)
+
+    for driver in teams:
+        hard = predictions[driver].team_degradation[H]
+        assert hard.source == DegradationSource.NEXT_SOFTER_BOUND
+        # Medium rate: both teams at 0.05, no shrinkage pulls it off that; the
+        # leave-one-out field average of 0.05 is what Hard reads here.
+        assert hard.rate == pytest.approx(0.05, abs=1e-9)
+
+
+def test_neither_fallback_is_used_when_any_team_runs_the_compound():
+    # VER has a Hard Long Run; LEC has none. Even with historical Hard data
+    # available, LEC's Hard source is FIELD_AVERAGE (from VER's rate), not
+    # CIRCUIT_HISTORY: the fallback chain only kicks in when nobody ran it.
+    teams = {"VER": "Red Bull Racing", "LEC": "Ferrari"}
+    laps = [
+        *_soft_and_medium_only("VER", "VER"),
+        *long_run("VER", "VER-H1", H, [90.0 + 0.1 * i for i in range(8)], first_lap=40),
+        *_soft_and_medium_only("LEC", "LEC"),
+    ]
+    history = {H: HistoricalDegradation(rate=99.0, seasons=(2023,), stint_count=5)}
+
+    predictions = predict(weekend(laps, teams, historical_degradation=history), NO_FUEL)
+
+    assert predictions["VER"].team_degradation[H].source == DegradationSource.LONG_RUNS
+    assert predictions["LEC"].team_degradation[H].source == DegradationSource.FIELD_AVERAGE
+    # 99.0 would be the history rate; the field-average read must not touch it.
+    assert predictions["LEC"].team_degradation[H].rate < 1.0
+
+
+def test_historical_degradation_never_uses_the_race_being_predicted():
+    # The predictor reads `historical_degradation` and never the race's own
+    # Stints. Build a weekend whose race.stints run Hards for 30 laps each —
+    # a tempting leak — and confirm the prediction depends only on the
+    # supplied history. Changing race.stints doesn't change the Hard rate.
+    teams = {"VER": "Red Bull Racing"}
+    laps = _soft_and_medium_only("VER", "VER")
+    history = {H: HistoricalDegradation(rate=0.08, seasons=(2023,), stint_count=5)}
+    leaky_race_stints = [
+        Stint(driver="VER", compound=M, start_lap=1, end_lap=25),
+        Stint(driver="VER", compound=H, start_lap=26, end_lap=57),
+    ]
+
+    with_race = predict(
+        weekend(
+            laps, teams,
+            race_stints=leaky_race_stints,
+            historical_degradation=history,
+        ),
+        NO_FUEL,
+    )["VER"]
+    without_race = predict(
+        weekend(laps, teams, historical_degradation=history),
+        NO_FUEL,
+    )["VER"]
+
+    assert with_race.team_degradation[H] == without_race.team_degradation[H]
+    assert with_race.team_degradation[H].rate == pytest.approx(0.08, abs=1e-9)
+
+
+def test_refuses_cleanly_when_no_fallback_applies():
+    # No team runs the Soft at all, no history for any Compound, and Soft is
+    # already the softest Compound so there is no softer bound. The predictor
+    # refuses with a message that names the Compound, not a traceback.
+    teams = {"VER": "Red Bull Racing"}
+    laps = [
+        *long_run("VER", "VER-M1", M, [90.0 + 0.05 * i for i in range(8)], first_lap=20),
+        *long_run("VER", "VER-H1", H, [90.0 + 0.04 * i for i in range(8)], first_lap=40),
+    ]
+
+    with pytest.raises(ValueError, match="Soft"):
+        predict(weekend(laps, teams), NO_FUEL)
+
+
+def test_history_is_fuel_corrected_the_same_way_as_practice():
+    # If the loader fuel-corrects history the same way practice is corrected,
+    # the resulting rate reads as "pure wear per lap" — the same meaning as a
+    # Long Run rate on the simulator. This test checks the predictor doesn't
+    # add any extra fuel adjustment to the history rate: a HistoricalDegradation
+    # rate flows into team_degradation unchanged (fuel correction is the
+    # loader's job).
+    teams = {"VER": "Red Bull Racing"}
+    laps = _soft_and_medium_only("VER", "VER")
+    history = {H: HistoricalDegradation(rate=0.11, seasons=(2022, 2023), stint_count=7)}
+
+    # Default fuel setting; the predictor must not change the rate.
+    prediction = predict(
+        weekend(laps, teams, historical_degradation=history),
+    )["VER"]
+
+    assert prediction.team_degradation[H].rate == pytest.approx(0.11, abs=1e-9)
+    assert prediction.team_degradation[H].source == DegradationSource.CIRCUIT_HISTORY

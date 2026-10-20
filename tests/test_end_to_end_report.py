@@ -18,7 +18,8 @@ from f1_strategy import (
     predict,
 )
 from f1_strategy.cli import main
-from f1_strategy.report import format_summary, format_table, strategy_label
+from f1_strategy.report import format_header, format_summary, format_table, strategy_label
+from f1_strategy.settings import Settings
 
 S, M, H = Compound.SOFT, Compound.MEDIUM, Compound.HARD
 
@@ -194,6 +195,69 @@ def test_command_refuses_a_race_that_is_not_dry(capsys):
     assert exit_code != 0
     assert "is not a Dry Race" in captured.err
     assert "Intermediate" in captured.err
+    assert "Traceback" not in captured.err
+    assert captured.out == ""
+
+
+def test_header_names_the_compound_that_leaned_on_circuit_history():
+    # Ticket 11: when a Compound's rate came from circuit race history, the
+    # header shows which Compound, the rate, the seasons and the Stint count.
+    from weekend_builder import long_run
+    from f1_strategy import HistoricalDegradation
+
+    laps = [
+        *long_run("VER", "VER-S1", S, [90.0 + 0.1 * i for i in range(8)]),
+        *long_run("VER", "VER-M1", M, [90.0 + 0.05 * i for i in range(8)], first_lap=20),
+    ]
+    history = {H: HistoricalDegradation(rate=0.08, seasons=(2022, 2023), stint_count=7)}
+    wkd = weekend(laps, {"VER": "Red Bull Racing"}, historical_degradation=history)
+    predictions = predict(wkd, Settings(fuel_effect_s_per_lap=0.0))
+
+    header = format_header(wkd.pre_race, Settings(), predictions)
+
+    assert "Historical Degradation fallbacks:" in header
+    assert "Hard: 0.080 s/lap (circuit history: seasons 2022, 2023, 7 Stints)" in header
+
+
+def test_header_names_the_compound_that_fell_to_the_next_softer_bound():
+    from weekend_builder import long_run
+
+    laps = [
+        *long_run("VER", "VER-S1", S, [90.0 + 0.1 * i for i in range(8)]),
+        *long_run("VER", "VER-M1", M, [90.0 + 0.05 * i for i in range(8)], first_lap=20),
+    ]
+    wkd = weekend(laps, {"VER": "Red Bull Racing"})
+    predictions = predict(wkd, Settings(fuel_effect_s_per_lap=0.0))
+
+    header = format_header(wkd.pre_race, Settings(), predictions)
+
+    assert "Historical Degradation fallbacks:" in header
+    assert "Hard: 0.050 s/lap (next-softer bound from Medium)" in header
+
+
+def test_header_omits_fallback_section_when_every_compound_was_run():
+    predictions = predict(weekend(standard_practice(), TEAMS))
+    header = format_header(weekend(standard_practice(), TEAMS).pre_race, Settings(), predictions)
+    assert "Historical Degradation fallbacks:" not in header
+
+
+def test_command_refuses_cleanly_when_no_fallback_can_estimate_a_compound(capsys):
+    # Ticket 11: nobody ran Softs in practice, no history for any Compound,
+    # and Soft is the softest — so no bound applies. The command must print
+    # a clear refusal to stderr and exit 2, not raise a traceback.
+    from weekend_builder import degrading_run
+
+    laps = [
+        *degrading_run("VER", "VER-M1", M, 0.07, first_lap=1),
+        *degrading_run("VER", "VER-H1", H, 0.04, first_lap=20),
+    ]
+    wkd = weekend(laps, {"VER": "Red Bull Racing"})
+
+    exit_code = main(["2024", "Test Grand Prix"], load=lambda season, event: wkd)
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "Soft" in captured.err
     assert "Traceback" not in captured.err
     assert captured.out == ""
 

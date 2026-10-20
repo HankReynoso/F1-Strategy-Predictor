@@ -2,6 +2,7 @@
 
 from f1_strategy import (
     Compound,
+    HistoricalDegradation,
     Lap,
     PreRaceInfo,
     RaceOutcome,
@@ -94,6 +95,7 @@ def weekend(
     pit_loss: float = 22.0,
     race_stints: list[Stint] | None = None,
     finishing_status: dict[str, bool] | None = None,
+    historical_degradation: dict[Compound, HistoricalDegradation] | None = None,
 ) -> RaceWeekend:
     stints = tuple(race_stints or ())
     if finishing_status is None:
@@ -118,6 +120,7 @@ def weekend(
             sessions=(Session(name="FP2", laps=tuple(practice_laps)),),
             teams=teams,
             pit_loss=pit_loss,
+            historical_degradation=dict(historical_degradation or {}),
         ),
         race=RaceOutcome(
             stints=stints, neutralisations=(), finishing_status=dict(finishing_status)

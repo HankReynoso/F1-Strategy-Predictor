@@ -47,6 +47,16 @@ class Session:
 
 
 @dataclass(frozen=True)
+class HistoricalDegradation:
+    """One Compound's Degradation estimated from previous seasons' race Stints
+    at the same circuit, with provenance for the report."""
+
+    rate: float  # seconds per lap, fuel-corrected
+    seasons: tuple[int, ...]  # the past seasons that contributed, oldest first
+    stint_count: int  # how many clean race Stints the fit pooled across
+
+
+@dataclass(frozen=True)
 class PreRaceInfo:
     circuit: str
     season: int
@@ -58,6 +68,13 @@ class PreRaceInfo:
     # New sets of each dry Compound allocated to every driver this weekend.
     # None means use the FIA regulation default for the weekend format.
     tyre_allocation: dict["Compound", int] | None = None
+    # Field-level Degradation per dry Compound from previous seasons' race
+    # Stints at this circuit (ticket 11, ADR-0003). A Compound is absent when
+    # no clean past-race Stints were available for it, or (deliberately) when
+    # the weekend is a hand-built test that doesn't need the fallback.
+    historical_degradation: dict["Compound", "HistoricalDegradation"] = field(
+        default_factory=dict
+    )
 
 
 @dataclass(frozen=True)

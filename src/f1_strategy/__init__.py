@@ -18,6 +18,7 @@ from .scorer import (
 from .settings import Settings
 from .weekend import (
     Compound,
+    HistoricalDegradation,
     Lap,
     NeutralisationPeriod,
     PreRaceInfo,
@@ -34,6 +35,7 @@ __all__ = [
     "DegradationEstimate",
     "DegradationSource",
     "DriverScore",
+    "HistoricalDegradation",
     "Lap",
     "NeutralisationPeriod",
     "NotDryRaceError",

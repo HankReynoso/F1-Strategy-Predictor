@@ -8,10 +8,11 @@ actual Strategy and how it scored. `format_summary` prints the race summary.
 from dataclasses import fields
 from fractions import Fraction
 
+from .degradation import DegradationSource
 from .predictor import CandidateStrategy, RemainingSetsRule, StrategyPrediction
 from .scorer import DriverScore, RaceComparison
 from .settings import Settings
-from .weekend import Compound, PreRaceInfo
+from .weekend import DRY_COMPOUNDS, Compound, PreRaceInfo
 
 TOP_SHOWN = 3
 
@@ -26,13 +27,63 @@ def strategy_label(compounds: tuple[Compound, ...]) -> str:
     return f"{len(compounds) - 1}-stop: " + " → ".join(c.value for c in compounds)
 
 
-def format_header(pre_race: PreRaceInfo, settings: Settings) -> str:
+def format_header(
+    pre_race: PreRaceInfo,
+    settings: Settings,
+    predictions: dict[str, StrategyPrediction] | None = None,
+) -> str:
     used = ", ".join(f"{f.name}={getattr(settings, f.name)}" for f in fields(settings))
-    return (
+    parts = [
         f"{pre_race.season} {pre_race.circuit}: {pre_race.race_laps} laps, "
-        f"Pit Loss {pre_race.pit_loss:.1f} s\n"
-        f"Settings: {used}"
-    )
+        f"Pit Loss {pre_race.pit_loss:.1f} s",
+        f"Settings: {used}",
+    ]
+    if predictions:
+        fallback = _historical_fallback_lines(pre_race, predictions)
+        if fallback:
+            parts.append("Historical Degradation fallbacks:")
+            parts.extend(f"  {line}" for line in fallback)
+    return "\n".join(parts)
+
+
+def _historical_fallback_lines(
+    pre_race: PreRaceInfo,
+    predictions: dict[str, StrategyPrediction],
+) -> list[str]:
+    """One line per dry Compound whose field-level fallback was circuit
+    history or the next-softer bound. Teams that have no own data on a
+    Compound all share the same source for it, so reading the first
+    prediction suffices.
+    """
+    if not predictions:
+        return []
+    first = next(iter(predictions.values()))
+    lines: list[str] = []
+    for compound in DRY_COMPOUNDS:
+        estimate = first.team_degradation[compound]
+        if estimate.source is DegradationSource.CIRCUIT_HISTORY:
+            hist = pre_race.historical_degradation.get(compound)
+            provenance = (
+                f"circuit history: seasons {_season_list(hist.seasons)}, "
+                f"{hist.stint_count} Stints"
+                if hist
+                else "circuit history"
+            )
+            lines.append(
+                f"{compound.name.title()}: {estimate.rate:.3f} s/lap ({provenance})"
+            )
+        elif estimate.source is DegradationSource.NEXT_SOFTER_BOUND:
+            idx = DRY_COMPOUNDS.index(compound)
+            softer = DRY_COMPOUNDS[idx - 1].name.title()
+            lines.append(
+                f"{compound.name.title()}: {estimate.rate:.3f} s/lap "
+                f"(next-softer bound from {softer})"
+            )
+    return lines
+
+
+def _season_list(seasons: tuple[int, ...]) -> str:
+    return ", ".join(str(s) for s in seasons)
 
 
 def format_table(

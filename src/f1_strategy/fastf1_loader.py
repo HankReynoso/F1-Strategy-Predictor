@@ -16,7 +16,9 @@ import fastf1
 import pandas as pd
 
 from .weekend import (
+    DRY_COMPOUNDS,
     Compound,
+    HistoricalDegradation,
     Lap,
     NeutralisationPeriod,
     PreRaceInfo,
@@ -57,12 +59,19 @@ def load_weekend(
     event: str,
     cache_dir: str | Path = ".cache/fastf1",
     pit_loss_min_season: int = 2022,
+    history_min_season: int = 2022,
+    fuel_effect_s_per_lap: float = 0.03,
+    history_min_stint_length: int = 4,
 ) -> RaceWeekend:
     """Load a FastF1 race weekend into the race weekend description.
 
     `event` is anything FastF1 accepts (official name or location name).
     `cache_dir` is the FastF1 on-disk cache; repeat loads come from it.
     `pit_loss_min_season` is the earliest season to draw pit-loss data from.
+    `history_min_season` is the earliest season to fit historical Degradation
+    from (previous seasons' race Stints at this circuit, ticket 11). It must
+    match the fuel effect in `Settings` so historical rates are directly
+    comparable with weekend Long Run rates.
     """
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -86,11 +95,15 @@ def load_weekend(
     neutralisations = _neutralisation_periods(race)
     finishing_status = _finishing_status(race, drivers=set(teams))
 
-    pit_loss = _pit_loss_at_circuit(
+    pit_loss, historical_degradation = _past_races_at_circuit(
         circuit=circuit,
         race_season=season,
-        min_season=pit_loss_min_season,
+        min_season=min(pit_loss_min_season, history_min_season),
         cache_dir=cache_dir,
+        fuel_effect_s_per_lap=fuel_effect_s_per_lap,
+        history_min_stint_length=history_min_stint_length,
+        pit_loss_min_season=pit_loss_min_season,
+        history_min_season=history_min_season,
     )
 
     return RaceWeekend(
@@ -102,6 +115,7 @@ def load_weekend(
             sessions=sessions,
             teams=teams,
             pit_loss=pit_loss,
+            historical_degradation=historical_degradation,
         ),
         race=RaceOutcome(
             stints=stints,
@@ -255,20 +269,36 @@ def _lap_neutralisation_kind(status: str) -> str | None:
     return None
 
 
-def _pit_loss_at_circuit(
+def _past_races_at_circuit(
     circuit: str,
     race_season: int,
     min_season: int,
     cache_dir: str | Path,
-) -> float:
-    """Measure Pit Loss from previous seasons' races at the circuit.
+    fuel_effect_s_per_lap: float,
+    history_min_stint_length: int,
+    pit_loss_min_season: int,
+    history_min_season: int,
+) -> tuple[float, dict[Compound, HistoricalDegradation]]:
+    """Load each previous season's race at the circuit once and read both the
+    Pit Loss sample and the historical Degradation sample from it.
 
-    Raises `ValueError` if no previous-season data is available: the
-    predictor would rather refuse than invent a Pit Loss from the race
-    being predicted.
+    Pit Loss raises `ValueError` if no past data is available (unchanged
+    behaviour). Historical Degradation is a best-effort dict: Compounds
+    without a clean sample are simply absent, and `team_degradation` falls
+    through to the next-softer bound.
+
+    Both measures weight recent seasons more heavily by `0.5 ** (gap - 1)`,
+    where `gap` is years between the past race and the race being predicted.
+    The race being predicted is never read (season range stops at
+    `race_season - 1`).
     """
     fastf1.Cache.enable_cache(str(cache_dir))
-    weighted: list[tuple[float, float]] = []  # (median_loss_for_race, weight)
+    # (median_loss_for_race, weight)
+    pit_weighted: list[tuple[float, float]] = []
+    # Per Compound: list of (per-stint rate, lap count, weight, past season)
+    hist_samples: dict[Compound, list[tuple[float, int, float, int]]] = {
+        c: [] for c in DRY_COMPOUNDS
+    }
     for season in range(min_season, race_season):
         try:
             schedule = fastf1.get_event_schedule(season)
@@ -282,24 +312,162 @@ def _pit_loss_at_circuit(
                 if not hasattr(past, "_laps"):
                     # FastF1's `load` logs and continues when the live-timing
                     # API refuses the data (e.g. older seasons behind a 403).
-                    # The session is then unusable for Pit Loss.
                     continue
-                losses = list(_pit_losses_in(past))
             except Exception:
                 continue
-            if not losses:
-                continue
-            losses.sort()
-            median = losses[len(losses) // 2]
             weight = 0.5 ** (race_season - season - 1)
-            weighted.append((median, weight))
-    if not weighted:
+            if season >= pit_loss_min_season:
+                try:
+                    losses = list(_pit_losses_in(past))
+                except Exception:
+                    losses = []
+                if losses:
+                    losses.sort()
+                    pit_weighted.append((losses[len(losses) // 2], weight))
+            if season >= history_min_season:
+                for compound, rate, n in _historical_stint_rates(
+                    past, fuel_effect_s_per_lap, history_min_stint_length
+                ):
+                    hist_samples[compound].append((rate, n, weight, season))
+
+    if not pit_weighted:
         raise ValueError(
             f"no previous seasons' races at {circuit!r} were available to measure "
-            f"Pit Loss from (looked at {min_season}..{race_season - 1})"
+            f"Pit Loss from (looked at {pit_loss_min_season}..{race_season - 1})"
         )
-    total_weight = sum(w for _, w in weighted)
-    return sum(m * w for m, w in weighted) / total_weight
+    total_weight = sum(w for _, w in pit_weighted)
+    pit_loss = sum(m * w for m, w in pit_weighted) / total_weight
+
+    historical_degradation: dict[Compound, HistoricalDegradation] = {}
+    for compound, samples in hist_samples.items():
+        if not samples:
+            continue
+        # Lap-count × season-weight weighted mean of per-stint rates: a long,
+        # recent Stint counts more than a short, old one. All rates are
+        # already fuel-corrected per Stint, so the mean is directly a wear-
+        # per-lap in the same units Long Run rates use.
+        weights = [n * w for _, n, w, _ in samples]
+        total = sum(weights)
+        rate = sum(r * x for (r, _, _, _), x in zip(samples, weights)) / total
+        seasons_used = tuple(sorted({s for _, _, _, s in samples}))
+        historical_degradation[compound] = HistoricalDegradation(
+            rate=rate,
+            seasons=seasons_used,
+            stint_count=len(samples),
+        )
+    return pit_loss, historical_degradation
+
+
+def _historical_stint_rates(
+    race, fuel_effect_s_per_lap: float, min_stint_length: int
+) -> Iterable[tuple[Compound, float, int]]:
+    """Per-Stint fuel-corrected Degradation rates from a past race, Compound-
+    tagged. Yields `(compound, rate_s_per_lap, lap_count)` for every clean
+    race Stint that has at least `min_stint_length` usable laps.
+
+    Clean rule (recorded in ticket 11's implementation notes):
+    - Drop pit-in and pit-out laps (first and last Stint lap are typically
+      these; FastF1 flags both via `PitInTime` / `PitOutTime`).
+    - Drop laps under SC or VSC (`TrackStatus` codes 4 / 6 / 7).
+    - Drop laps whose `LapTime` is missing (safety-car bunches, red flags).
+    - Drop laps that are not strictly consecutive after cleaning.
+    - Drop the whole Stint if fewer than `min_stint_length` laps remain.
+
+    Fuel correction is the same slope lift as practice (ticket 02): the
+    within-run least-squares slope of lap time against tyre age, plus
+    `fuel_effect_s_per_lap`. Over a full race Stint, tyre age and lap number
+    advance 1:1 — exactly as inside a Long Run — so the correction has the
+    same meaning as for a practice Long Run.
+    """
+    df = race.laps
+    if df is None or df.empty:
+        return
+    for driver in df["Driver"].unique():
+        driver_laps = df[df["Driver"] == driver].sort_values("LapNumber")
+        if driver_laps.empty:
+            continue
+        for _, stint_laps in driver_laps.groupby("Stint", sort=True):
+            compound_raw = stint_laps["Compound"].dropna()
+            if compound_raw.empty:
+                continue
+            compound = _COMPOUND.get(str(compound_raw.iloc[0]).upper())
+            if compound is None or compound not in DRY_COMPOUNDS:
+                continue
+            clean = []
+            for _, lap in stint_laps.iterrows():
+                if pd.isna(lap.get("LapTime")) or pd.isna(lap.get("TyreLife")):
+                    continue
+                if not pd.isna(lap.get("PitInTime")) or not pd.isna(
+                    lap.get("PitOutTime")
+                ):
+                    continue
+                if _lap_neutralisation_kind(str(lap.get("TrackStatus", "1"))) is not None:
+                    continue
+                clean.append(
+                    (int(lap["TyreLife"]), float(lap["LapTime"].total_seconds()))
+                )
+            if len(clean) < min_stint_length:
+                continue
+            # Keep only the longest run of strictly consecutive tyre-age
+            # values after dropping neutralised and pit laps mid-Stint.
+            consecutive = _longest_consecutive(clean)
+            if len(consecutive) < min_stint_length:
+                continue
+            rate = _slope(consecutive)
+            if rate is None:
+                continue
+            yield compound, rate + fuel_effect_s_per_lap, len(consecutive)
+
+
+def _longest_consecutive(points: list[tuple[int, float]]) -> list[tuple[int, float]]:
+    """Longest sub-sequence of `(tyre_age, lap_time)` whose tyre_age values
+    increase by exactly 1 each step. Ties keep the first."""
+    best: list[tuple[int, float]] = []
+    current: list[tuple[int, float]] = []
+    last_age: int | None = None
+    for age, time in points:
+        if last_age is not None and age == last_age + 1:
+            current.append((age, time))
+        else:
+            current = [(age, time)]
+        if len(current) > len(best):
+            best = list(current)
+        last_age = age
+    return best
+
+
+def _slope(points: list[tuple[int, float]]) -> float | None:
+    """Least-squares slope of lap time against tyre age. None if the ages
+    don't vary (defensive — the caller only passes consecutive runs ≥ 4)."""
+    import statistics
+
+    mean_x = statistics.fmean(x for x, _ in points)
+    mean_y = statistics.fmean(y for _, y in points)
+    sxy = sum((x - mean_x) * (y - mean_y) for x, y in points)
+    sxx = sum((x - mean_x) ** 2 for x, _ in points)
+    if sxx <= 0:
+        return None
+    return sxy / sxx
+
+
+# Back-compat alias: tests from ticket 07 pin the old function name.
+def _pit_loss_at_circuit(
+    circuit: str,
+    race_season: int,
+    min_season: int,
+    cache_dir: str | Path,
+) -> float:
+    pit_loss, _ = _past_races_at_circuit(
+        circuit=circuit,
+        race_season=race_season,
+        min_season=min_season,
+        cache_dir=cache_dir,
+        fuel_effect_s_per_lap=0.03,
+        history_min_stint_length=4,
+        pit_loss_min_season=min_season,
+        history_min_season=race_season,  # history disabled: no past seasons >=.
+    )
+    return pit_loss
 
 
 def _pit_losses_in(race) -> Iterable[float]:

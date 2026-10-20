@@ -52,6 +52,10 @@ _Avoid_: deg (fine in speech), tyre wear, drop-off
 A practice Stint of consistently timed consecutive laps at race pace on a heavy fuel load, used to measure Degradation. On sprint weekends, sprint race Stints also count as Long Runs.
 _Avoid_: race sim, race run
 
+**Historical Degradation**:
+A circuit's field-level Degradation per dry Compound, estimated from previous seasons' race Stints at that circuit (current regulations, 2022+, recent seasons weighted more, never the race being predicted). Used when no team ran a Compound in practice this weekend.
+_Avoid_: history rate, past-season deg
+
 **Push Lap**:
 A single flat-out lap in practice, recognisable as a fast lap between slower preparation and cool-down laps. Several Push Laps may be done on one Tyre Set. Push Laps are not part of a Long Run.
 _Avoid_: quali sim, hot lap, flying lap

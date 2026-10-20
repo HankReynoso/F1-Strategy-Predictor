@@ -8,7 +8,11 @@ least-squares slope of lap time against tyre age, with the fuel effect
 setting added back on so the slope reflects pure tyre wear. When the team
 has no Long Runs on a Compound, we use its **Push Laps** on that Compound,
 fitted the same way across the Push Laps grouped per Tyre Set. When
-neither is available, we fall back to the **field average**.
+neither is available, we fall back to the **field average**, and if even
+that is empty (no team ran the Compound this weekend) to the circuit's
+**race-history** Degradation for that Compound (ticket 11, ADR-0003), and
+finally to the next-softer Compound's field-level rate as an **upper
+bound** (a harder Compound is assumed to wear no faster).
 
 **Shrinkage.** Each team's raw fit is blended with the field average,
 leaning on its own fit when it has a lot of running on the Compound and
@@ -45,6 +49,12 @@ class DegradationSource(Enum):
     LONG_RUNS = "long_runs"
     PUSH_LAPS = "push_laps"
     FIELD_AVERAGE = "field_average"
+    # No team ran the Compound in practice: Degradation came from previous
+    # seasons' race Stints at this circuit (ticket 11, ADR-0003).
+    CIRCUIT_HISTORY = "circuit_history"
+    # No practice and no history: upper-bound by the next-softer Compound's
+    # field-average Degradation (ticket 11, ADR-0003).
+    NEXT_SOFTER_BOUND = "next_softer_bound"
 
 
 @dataclass(frozen=True)
@@ -62,8 +72,8 @@ def team_degradation(
     pre_race: PreRaceInfo, settings: Settings
 ) -> dict[str, dict[Compound, DegradationEstimate]]:
     """Per-team per-Compound fuel-corrected Degradation with shrinkage to the
-    field average, falling back to the field average when the team has no
-    running on a Compound.
+    field average, falling back through circuit race history and finally to
+    the next-softer Compound's field-level rate as an upper bound.
     """
     classified = classify(pre_race, settings)
     team_lr = _fit_by_team_compound(
@@ -79,6 +89,11 @@ def team_degradation(
         team_raw[key] = (rate, n, DegradationSource.PUSH_LAPS)
     for key, (rate, n) in team_lr.items():
         team_raw[key] = (rate, n, DegradationSource.LONG_RUNS)
+
+    # Per-Compound field-level fallback: used by every team that has no own
+    # data on the Compound. Weekend field average first, then circuit race
+    # history, then the next-softer Compound's own fallback.
+    field_fallback = _field_fallbacks(team_raw, pre_race.historical_degradation)
 
     k = settings.degradation_shrinkage_laps
     result: dict[str, dict[Compound, DegradationEstimate]] = {}
@@ -100,17 +115,69 @@ def team_degradation(
                     else raw
                 )
                 per_compound[compound] = DegradationEstimate(max(0.0, blended), source)
-            elif field_avg is not None:
-                per_compound[compound] = DegradationEstimate(
-                    max(0.0, field_avg), DegradationSource.FIELD_AVERAGE
-                )
-            else:
+                continue
+            fallback = field_fallback.get(compound)
+            if fallback is None:
                 raise ValueError(
                     f"No Long Runs or Push Laps on {compound.name.title()} across "
-                    "the field; cannot estimate Degradation."
+                    "the field, no previous-seasons' race Stints at this circuit, "
+                    f"and no softer Compound to bound {compound.name.title()} by; "
+                    "cannot estimate Degradation."
                 )
+            rate, source = fallback
+            per_compound[compound] = DegradationEstimate(max(0.0, rate), source)
         result[team] = per_compound
     return result
+
+
+def _field_fallbacks(
+    team_raw: dict[tuple[str, Compound], tuple[float, int, DegradationSource]],
+    historical: dict[Compound, "object"],
+) -> dict[Compound, tuple[float, DegradationSource]]:
+    """Resolve a (rate, source) for every dry Compound that reaches the
+    field-level fallback chain, in softer→harder order so a Compound's
+    next-softer bound sees the already-resolved softer rate.
+
+    - Weekend field average (any team ran it) → FIELD_AVERAGE
+    - Previous seasons' race Stints at this circuit → CIRCUIT_HISTORY
+    - Next-softer Compound's resolved rate → NEXT_SOFTER_BOUND
+    """
+    # DRY_COMPOUNDS is (SOFT, MEDIUM, HARD), i.e. already softer→harder.
+    resolved: dict[Compound, tuple[float, DegradationSource]] = {}
+    for compound in DRY_COMPOUNDS:
+        all_on_compound = [
+            (r, n) for (_, c), (r, n, _) in team_raw.items() if c == compound
+        ]
+        field_avg = _weighted_mean(all_on_compound)
+        if field_avg is not None:
+            resolved[compound] = (field_avg, DegradationSource.FIELD_AVERAGE)
+            continue
+        hist = historical.get(compound)
+        if hist is not None:
+            resolved[compound] = (hist.rate, DegradationSource.CIRCUIT_HISTORY)
+            continue
+        # Softer Compound's resolved rate acts as an upper bound (harder
+        # Compounds are assumed to wear no faster). SOFT has no softer bound.
+        softer_bound = _softer_bound(compound, resolved)
+        if softer_bound is not None:
+            resolved[compound] = (softer_bound, DegradationSource.NEXT_SOFTER_BOUND)
+    return resolved
+
+
+def _softer_bound(
+    compound: Compound,
+    resolved: dict[Compound, tuple[float, DegradationSource]],
+) -> float | None:
+    """The already-resolved rate of the Compound one step softer than
+    `compound`, if any. SOFT has no softer bound; Medium's softer is Soft;
+    Hard's softer is Medium.
+    """
+    idx = DRY_COMPOUNDS.index(compound)
+    if idx == 0:
+        return None
+    softer = DRY_COMPOUNDS[idx - 1]
+    entry = resolved.get(softer)
+    return entry[0] if entry is not None else None
 
 
 def base_lap_time(pre_race: PreRaceInfo, settings: Settings | None = None) -> float:

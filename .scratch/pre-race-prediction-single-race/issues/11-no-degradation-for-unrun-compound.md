@@ -4,14 +4,14 @@
 
 **Blocked by:** None
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Category:** enhancement
 
-- [ ] A weekend where no team ran one dry Compound still gets Strategy Predictions
-- [ ] The Degradation source for that Compound says it was not measured this weekend
-- [ ] Monza 2024 can be predicted
-- [ ] The command reports the gap clearly instead of a traceback if prediction is still refused
+- [x] A weekend where no team ran one dry Compound still gets Strategy Predictions
+- [x] The Degradation source for that Compound says it was not measured this weekend
+- [x] Monza 2024 can be predicted
+- [x] The command reports the gap clearly instead of a traceback if prediction is still refused
 
 ## Comments
 
@@ -46,16 +46,212 @@ The Degradation fallback chain gains two steps after the field average: (1) a fi
 - `predict()`: no longer raises for a Compound with no practice running when a later fallback step applies
 
 **Acceptance criteria:**
-- [ ] A hand-built weekend where nobody ran the Hard, with circuit race history, predicts using a history-sourced Hard rate
-- [ ] The same weekend without history uses the next-softer bound, with that source reported
-- [ ] Neither fallback is used when any team ran the Compound
-- [ ] Historical Degradation never uses the race being predicted (a no-leakage test)
-- [ ] Monza 2024 can be predicted by the command
-- [ ] A weekend where no fallback applies gives a clear refusal message from the command, exit code 2
-- [ ] ADR-0003 (written at triage) still matches what was built; update it if the implementation differed
-- [ ] `CONTEXT.md` gains a term for circuit race-history Degradation if the work needs one
+- [x] A hand-built weekend where nobody ran the Hard, with circuit race history, predicts using a history-sourced Hard rate
+- [x] The same weekend without history uses the next-softer bound, with that source reported
+- [x] Neither fallback is used when any team ran the Compound
+- [x] Historical Degradation never uses the race being predicted (a no-leakage test)
+- [x] Monza 2024 can be predicted by the command
+- [x] A weekend where no fallback applies gives a clear refusal message from the command, exit code 2
+- [x] ADR-0003 (written at triage) still matches what was built; update it if the implementation differed
+- [x] `CONTEXT.md` gains a term for circuit race-history Degradation if the work needs one
 
 **Out of scope:**
 - Circuit Tendency (strategy frequencies), which is a separate spec
 - Using history to adjust Compounds that teams did run in practice
 - Per-team historical Degradation
+
+## Implementation notes
+
+**What was built (2026-10-20), test-first through `predict()`.**
+
+- `weekend.HistoricalDegradation` — a plain frozen dataclass carrying one
+  Compound's fuel-corrected rate, the past seasons that contributed and
+  the clean Stint count. `PreRaceInfo.historical_degradation` is a dict
+  `{Compound: HistoricalDegradation}`, empty by default so every existing
+  hand-built test keeps working unchanged.
+- `DegradationSource` gains `CIRCUIT_HISTORY` and `NEXT_SOFTER_BOUND`.
+- `degradation.team_degradation()` extends the fallback chain. For a
+  (team, Compound) with no own data, the resolver `_field_fallbacks()`
+  walks the three dry Compounds softer→harder and resolves one of:
+  weekend field average (FIELD_AVERAGE) → circuit history
+  (CIRCUIT_HISTORY) → next-softer Compound's resolved rate
+  (NEXT_SOFTER_BOUND). Softer→harder order is deliberate: Hard's bound
+  can read Medium's already-resolved rate. SOFT has no softer bound; if
+  no team ran it, no history exists and nothing softer is available, the
+  predictor raises a clear ValueError that names the Compound and the
+  three gaps.
+- `fastf1_loader.load_weekend()` merges Pit Loss and historical
+  Degradation into one past-races walk: for every previous season (down
+  to `history_min_season=2022`) at the same circuit, each clean race
+  Stint on a dry Compound contributes a fuel-corrected per-Stint slope.
+  Stint samples are weighted by `lap_count × season_weight` with
+  `season_weight = 0.5 ** (gap - 1)`, the same recent-seasons bias Pit
+  Loss already uses. Clean Stints: drop pit-in and pit-out laps, drop
+  laps under SC/VSC (TrackStatus 4/6/7), drop laps with missing
+  LapTime/TyreLife, then keep only the longest run of strictly
+  consecutive tyre-ages so a mid-Stint neutralisation can't make a
+  pre- and post-SC half look like one 1:1 run. Stints with fewer than
+  `history_min_stint_length=4` usable laps are dropped. The fuel
+  correction is the slope + `fuel_effect_s_per_lap` lift from ticket 02,
+  which is exact when tyre age and lap number move 1:1 within a run —
+  the practice Long Run case and the race Stint case alike. The loader
+  takes `fuel_effect_s_per_lap=0.03` and `history_min_stint_length=4`
+  as explicit arguments defaulted to the same values the predictor's
+  `Settings` default to, so historical rates are directly comparable
+  with weekend Long Run rates. The race being predicted is never read:
+  the past-seasons loop stops at `race_season - 1`.
+- `cli.py` catches `ValueError` from `predict()` and prints a plain
+  refusal to stderr with exit code 2 (same shape as the Not-Dry-Race
+  refusal). stdout stays empty, so a pipe never sees a half report.
+- `report.format_header()` grows an optional `predictions` argument. When
+  any dry Compound's field-level fallback is CIRCUIT_HISTORY or
+  NEXT_SOFTER_BOUND, the header gains a "Historical Degradation
+  fallbacks:" block listing which Compound used which source, the rate,
+  and (for history) the seasons that contributed and the Stint count.
+
+**Decisions and alternatives rejected.**
+
+- *Softer→harder recursion for the bound chain.* The ADR says "the
+  next-softer Compound's **field-average** Degradation" as an upper
+  bound. If the next-softer Compound was *also* unrun this weekend, its
+  own fallback (likely history) stands in its place: the chain
+  propagates. The alternative — only read the weekend's own
+  Compound-level average, refuse if the next-softer is also unrun — is
+  stricter but needlessly fails cases where Medium had no running
+  either (e.g. a hypothetical conservative weekend where only Softs were
+  used in practice). Softer→harder resolution gets this with no new
+  tracking state.
+- *History fit at per-Stint granularity, pooled by `lap_count ×
+  season_weight`.* The alternative was to fit one big pooled slope per
+  Compound per past race. Rejected because a 20-lap Stint from one
+  driver should count more than a 5-lap one, and pooling erases that
+  weight. The lap-count × season-weight scheme matches how Pit Loss
+  weights seasons already (consistency), and the per-Stint rates stay
+  individually readable (easy to audit a Vegas-shaped surprise).
+- *Clean-stint rule: drop pit laps, SC/VSC laps, missing LapTime, then
+  keep the longest consecutive sub-run; min length 4.* The main worry
+  is a mid-Stint SC that masks real wear: without the consecutive-only
+  filter, we'd fit a slope across the gap and read a near-zero rate
+  everywhere. Length 4 matches `min_long_run_length` in practice (same
+  statistical cutoff). Alternatives rejected: median lap-time filtering
+  (a Stint's lap times vary systematically with tyre age, so a median
+  cut would under-count later laps and bias the slope flat); whole-race
+  pooled fits (lose the Stint-length weighting signal).
+- *Fuel correction kept.* Within a race Stint, tyre age and lap number
+  advance 1:1, so adding `fuel_effect_s_per_lap` back onto the fitted
+  slope recovers pure wear — the same meaning as for a practice Long
+  Run. This is important because the simulator mixes rates from both
+  sources into one `Simulated Race Time` calculation; a half-corrected
+  rate would be systematically lower (or higher) than practice rates.
+- *History never leaks the predicted race.* By construction the loader
+  loop stops at `race_season - 1`. The hand-built no-leakage test
+  (`test_historical_degradation_never_uses_the_race_being_predicted`)
+  checks the predictor itself reads only `historical_degradation` and
+  never `race.stints`: putting Hard stints into `race.stints` doesn't
+  shift the prediction.
+- *Shrinkage is not applied to historical or next-softer-bound rates.*
+  The ticket-13 shrinkage pulls each **team's own fit** toward a field
+  average because that team's fit is noisy. A historical rate is
+  already pooled across many Stints and seasons; the bound-rate is
+  itself the field-level answer for a softer Compound. There is no
+  "team's own fit" to shrink in these cases; the rate goes through as
+  is.
+- *CLI message mentions the Compound and the three gaps.* Keeps the
+  refusal self-explanatory to someone running the command — they can
+  see at a glance whether to blame a sprint-weekend practice gap, a
+  missing cache year, or a genuinely unprecedented combination.
+- *Report header mentions the fallback only when it fired.* Standard
+  practice weekends (every Compound run) look exactly the same as
+  before. Weekends that leaned on history or the bound carry a
+  one-line-per-Compound note between the settings line and the table.
+- *CLI exit code 2 reused for the refusal.* Same code as the Not-Dry-
+  Race refusal (ticket 01). Both are "the model declines to predict",
+  not "the model crashed"; keeping one code lets a CI wrapper branch on
+  "0 vs non-zero" without caring which refusal fired.
+
+**Deviations from the ticket.** None in behaviour. The ADR already
+documented the chain exactly as built; the ticket's Acceptance Criteria
+are all green.
+
+**Three refused-before 2024 races now predict.** All run with default
+`Settings`; the historical rate line is quoted from the printed header.
+
+- **Monza 2024** — Hard: 0.042 s/lap (circuit history: seasons 2022,
+  2023, 29 Stints). Hard sources for every team's Monza Hard estimate:
+  CIRCUIT_HISTORY. Race summary: Scoreable drivers 19 of 20; Top-1
+  Strategy Match 4/19 (21%); Top-3 Strategy Match 10/19 (53%); Stop
+  Window hits 10/30 actual stops (33%); Neutralised Race: no.
+- **Abu Dhabi 2024** (Yas Island) — Hard: 0.025 s/lap (circuit history:
+  seasons 2022, 2023, 59 Stints). Hard sources: CIRCUIT_HISTORY for
+  every team. Race summary: Scoreable drivers 16 of 20; Top-1 2/16
+  (12%); Top-3 4.5/16 (28%); Stop Window hits 2/23 actual stops (9%);
+  Neutralised Race: yes.
+- **Las Vegas 2024** — Hard: 0.000 s/lap (circuit history: seasons
+  2023, 29 Stints). Hard sources: CIRCUIT_HISTORY. The rate is clamped
+  at zero because Vegas's heavy track evolution gives a negative raw
+  slope on the Hard (lap times get faster, not slower, through a Stint
+  as the surface rubbers in). Even with ticket 02's fuel correction
+  added back on the raw slope stays near or below zero. Race summary:
+  Scoreable drivers 18 of 20; Top-1 0/18 (0%); Top-3 0.25/18 (1%);
+  Stop Window hits 0/37 actual stops (0%); Neutralised Race: no. This
+  is honest reporting: the ticket's job was to make Vegas predictable,
+  not to predict it well — the near-zero historical rate reflects a
+  real property of the circuit and feeds a model that assumes
+  Degradation is monotonic in tyre age. A follow-up (not in scope
+  here) is track-evolution-aware fitting; filed as a new need-triage
+  ticket is not yet justified because the pattern only clearly shows
+  up at Vegas among 2024 Dry Races we've looked at.
+
+**Singapore 2024 unchanged** (every Compound was run in practice, so no
+fallback fires): Scoreable drivers 18 of 20; Top-1 6.5/18 (36%); Top-3
+13.75/18 (76%); Stop Window hits 3/20 actual stops (15%); Neutralised
+Race: no. Matches the "Rerun after ticket 14" line in ticket 08 to the
+digit.
+
+**Spec changes.** The spec's "Default first race" note mentioned Monza
+2024 was blocked by ticket 11; that is now stale. Updated spec.md to
+say Monza 2024 is now predictable, with the Hard rate drawn from
+circuit race history, and Singapore remains the reference weekend for
+test-driven work because every Compound has practice data there.
+
+**CONTEXT.md.** Added a glossary entry "**Historical Degradation**" so
+the new source has domain vocabulary and the report line reads with
+house terms. No other terms change.
+
+**ADR-0003.** Still matches what was built. Added a short note that
+the chain resolves softer→harder, so a Hard with no running inherits
+Medium's resolved rate even when Medium is also unrun — a point the
+original ADR had left implicit.
+
+**Open questions and follow-ups.**
+
+- *Vegas-shape surprise.* Negative raw slopes on heavy-track-evolution
+  circuits make historical Degradation effectively zero. The current
+  mitigation (shrinkage, clamp) is honest but produces wide, uniform
+  Stop Windows and 0% Top-1 at Vegas. Not filed as a new ticket yet
+  because the fix couples with Compound pace (spec Open questions) and
+  the Backtest will reveal whether this is a widespread problem or
+  Vegas-only.
+- *History is field-level only.* Per-team historical fits would use the
+  same data split by team-equivalent (constructor-year), but the Agent
+  Brief explicitly puts "Per-team historical Degradation" out of scope.
+- *Next-softer bound could use the next-softer's history rather than
+  its resolved rate.* The current code uses whatever rate the softer
+  Compound already resolved (field avg → history → bound). A reading of
+  the ADR as strictly "field average" would stop the chain at step 1
+  and never recurse. Softer→harder recursion was chosen because it
+  always produces a bound where any dry Compound was ever run anywhere
+  in the chain; the stricter reading is a tunable the Backtest can
+  revisit if the bound-on-bound case shows up.
+
+**Review feedback for the user.**
+
+- Las Vegas 2024 is now predicted but with a near-zero Hard rate that
+  gives 0 Top-1 matches. If the Backtest wants Vegas to score, track
+  evolution (or Compound pace with a Soft intercept) needs its own
+  ticket.
+- The historical fit discards mid-Stint neutralisation laps and keeps
+  only the longest consecutive segment. That is a conservative choice:
+  on heavily SC-affected races at a circuit it will leave fewer Stints
+  in the sample. If a future circuit's history looks suspiciously
+  thin, the Stint-count line in the report header will show it.

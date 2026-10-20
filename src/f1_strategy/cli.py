@@ -43,9 +43,21 @@ def main(argv: Sequence[str] | None = None, load: Loader | None = None) -> int:
     except NotDryRaceError as refusal:
         print(refusal, file=sys.stderr)
         return 2
+    except ValueError as refusal:
+        # Clear refusal (not a crash) when the Degradation fallback chain
+        # cannot produce a rate for some Compound (ticket 11, ADR-0003):
+        # no team ran it, no circuit race history for it, and no softer
+        # Compound to bound it by. Reported to stderr, exit code 2, so
+        # a pipe never sees a half report.
+        print(
+            f"Cannot predict {weekend.pre_race.season} {weekend.pre_race.circuit}: "
+            f"{refusal}",
+            file=sys.stderr,
+        )
+        return 2
     comparison = compare(predictions, weekend)
 
-    print(format_header(weekend.pre_race, settings))
+    print(format_header(weekend.pre_race, settings, predictions))
     print()
     print(format_table(predictions, comparison))
     print()
