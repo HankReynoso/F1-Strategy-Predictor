@@ -149,3 +149,30 @@ Who moved from unscoreable to scoreable: the 11 lapped classified finishers (ALO
 Both tops-1 matches held, and six more showed up among the lapped finishers (every M → H mirror), which is why top-1 only rises from 29% to 33% despite nearly tripling the denominator. The ticket-08 note's diagnostic forecast (top-1 6/19, top-3 12/19, Stop Window hits 4/22) is close for top-1 and top-3 but on different denominators; it counted MAG as a finisher and included Ricciardo's three stops in the window-hit denominator the same way we do.
 
 Takeaway for the baseline: ticket 10 fixes the single biggest hole in the "before" number, but the top-1 figure is still dominated by mirrored-tie enumeration order (ticket 14) and the Stop Window hits by degenerate token-Stint windows (ticket 13), both of which need to land before this is used as the Circuit Tendency baseline.
+
+## Rerun after ticket 13 (2026-10-20)
+
+Added separately from both the original "before" record and the ticket-10 rerun above; neither is edited. Ticket 13 (shrink team Degradation toward the field average instead of clamping to zero, and enforce a minimum race Stint length) was built on top of ticket 10. Rerunning `uv run f1-strategy 2024 "Singapore Grand Prix"` with its new defaults (`degradation_shrinkage_laps=4.0`, `min_stint_length=5`; every other setting unchanged) gives:
+
+| | Before (original) | After ticket 10 | After ticket 13 |
+|---|---|---|---|
+| Scoreable drivers | 7 of 20 | 18 of 20 | 18 of 20 |
+| Top-1 Strategy Match | 2/7 (29%) | 6/18 (33%) | 10/18 (56%) |
+| Top-3 Strategy Match | 6/7 (86%) | 12/18 (67%) | 14/18 (78%) |
+| Stop Window hits | 1/7 (14%) | 3/20 (15%) | 3/20 (15%) |
+| Neutralised Race | no | no | no |
+
+Who moved: among the 18 scored drivers, four more now get the actual Strategy as their top pick — RUS, LEC, HAM and SAI used to tie 3–6 ways on a degenerate "S → M, stop on lap 1–2" favourite, and now top-pick M → H outright; two further drivers' top-3 (STR, ZHO) picks up the actual Strategy because the mirrored M → H is no longer displaced by token Strategies. HAM is the one scored driver whose actual Strategy (S → H) sits outside the top 3; without Compound pace (spec Open questions) the model still never ranks a Soft-first strategy highly on a Singapore-like race. Stop Window hits are unchanged at 3/20 — ticket 15 is the one about Stop Windows landing too early.
+
+Who did NOT move: VER, PIA (already on M → H in the before column) keep their top-1; NOR still misses top-1 by ranking S → H ahead of M → H by a sliver (same mirrored S/H pairs problem); TSU, GAS (actual M → S), RIC (3-stop ending S → S), ALB (DNF, unscoreable), MAG (unscoreable per ticket 10).
+
+What the two new settings each contributed:
+
+- **Shrinkage (no more clamp to zero).** The six Singapore teams whose fits previously clamped to exactly zero (Mercedes M/H, Ferrari H, Williams M, Sauber M/H, RB S) now receive a non-zero shrunk rate instead of a zero. The "stop on lap 1–2" tie disappears, which flips four scored drivers' top picks to M → H. This is where the top-1 lift from 33% → 56% comes from.
+- **Minimum Stint length = 5.** No Candidate Strategy now contains a Stint shorter than 5 laps, and no Stop Window begins before lap 5 or past `race_laps − 5 = 57`. The lap 1–2 Stop Windows in the previous records are gone (narrowest Stop Windows are now 5–5 or 5–7). RUS's degenerate 1–61 Stop Window shrinks to 5–57; the one Stop Window hit from the before record (RUS's actual lap 27) still counts.
+
+Residual oddities still visible: on teams whose Degradation is still uniformly flat across all Compounds after shrinkage (Mercedes, Sauber, Williams's RUS/HAM/COL/ALB rows), 1-stop Stop Windows span the full feasible range (laps 5–57). This is honest — the simulator sees no preference when every Compound has the same rate. The underlying cause is still Compound pace (spec Open questions); ticket 15 is the one tracking Stop Windows systematically.
+
+Settings were not tuned to improve any of this. The defaults are reasoned in ticket 13's Implementation notes (shrinkage anchored on `min_long_run_length = 4`; minimum Stint length conservative lower bound at 5 laps) and were not revisited after this run.
+
+Takeaway for the baseline: ticket 13 lifts top-1 Strategy Match from 33% to 56% and top-3 from 67% to 78%, both without touching Stop Window accuracy (which still needs ticket 15). Combined with ticket 10's lapped-finisher fix, this is a materially stronger "before" number for Circuit Tendency than the original record, though ticket 14 (mirrored-tie enumeration order) will shift it again.

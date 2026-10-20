@@ -36,3 +36,19 @@ class Settings:
     # the same Tyre Set by at least this much is a Push Lap. A Tyre Set with
     # any Push Lap is classified as Push Laps and never as a Long Run.
     push_lap_fast_margin_s: float = 1.0
+
+    # Degradation shrinkage: a team's own fitted Degradation on a Compound is
+    # blended with the field average (the raw, unshrunk, unclamped mean across
+    # the other teams on that Compound, weighted by each team's lap count).
+    # The blend weights the team's own fit by its lap count and the field
+    # average by this many "equivalent laps". A team at the minimum Long Run
+    # length (4) sits at a 50/50 blend; a team with two clean 8-lap runs is
+    # 80% its own fit. Final estimate clamped at zero.
+    degradation_shrinkage_laps: float = 4.0
+
+    # Minimum race Stint length. A Candidate Strategy must have every Stint at
+    # least this long, and no Stop Window puts a stop so early (or so late)
+    # that any Stint on either side would be shorter. 5 laps because planned
+    # (non-Deviation) race Stints below 5 laps are essentially never seen in
+    # modern F1; a 5-lap undercut or overcut window still fits comfortably.
+    min_stint_length: int = 5

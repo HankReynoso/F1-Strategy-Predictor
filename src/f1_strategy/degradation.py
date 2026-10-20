@@ -1,15 +1,32 @@
-"""Degradation model: per-Compound per-team rates with a three-step fallback.
+"""Degradation model: per-Compound per-team rates with shrinkage.
 
-Each team's Degradation on a Compound is fitted from fuel-corrected lap
-times. The best signal is the team's own **Long Runs**: a pooled
-within-run least-squares slope of lap time against tyre age, with the fuel
-effect setting added back on so the slope reflects pure tyre wear. When
-the team has no Long Runs on a Compound, we fall back to its **Push Laps**
-on that Compound, fitted the same way across the Push Laps grouped per
-Tyre Set. When neither is available, we fall back to the **field average**:
-the mean of the best-available fitted rate across the other teams that do
-have running on the Compound. Each estimate records which source it came
-from.
+Each team's fitted Degradation on a Compound is blended with the field
+average, so that short, noisy fits don't sit at exactly 0 (ticket 13).
+
+The best signal for a team is its own **Long Runs**: a pooled within-run
+least-squares slope of lap time against tyre age, with the fuel effect
+setting added back on so the slope reflects pure tyre wear. When the team
+has no Long Runs on a Compound, we use its **Push Laps** on that Compound,
+fitted the same way across the Push Laps grouped per Tyre Set. When
+neither is available, we fall back to the **field average**.
+
+**Shrinkage.** Each team's raw fit is blended with the field average,
+leaning on its own fit when it has a lot of running on the Compound and
+on the field average when it has little. The blend weights the team's own
+fit by its lap count and the field average by `degradation_shrinkage_laps`
+equivalent laps. The field average is a lap-count-weighted mean of the
+raw (unshrunk, unclamped) rates of the **other** teams on the Compound,
+so a team is never pulled toward itself and one team's noisy near-zero
+fit doesn't lower the field average used by other teams. The raw rates
+are intentionally not clamped before averaging: a short noisy run that
+would previously fit to exactly zero stayed at zero and dragged the field
+average down for everyone; by keeping the raw value (even if slightly
+negative) and blending, the near-zero team is self-corrected by the pull
+toward the field without poisoning the field. The shrunk value is
+clamped at zero so Simulated Race Time never sees a negative rate.
+
+Each estimate records which source its own data came from (or
+`FIELD_AVERAGE` when the team has no data on the Compound).
 """
 
 from collections import defaultdict
@@ -44,8 +61,9 @@ def long_runs(pre_race: PreRaceInfo, settings: Settings | None = None) -> list[l
 def team_degradation(
     pre_race: PreRaceInfo, settings: Settings
 ) -> dict[str, dict[Compound, DegradationEstimate]]:
-    """Per-team per-Compound fuel-corrected Degradation with a three-step
-    fallback: team Long Runs, then team Push Laps, then the field average.
+    """Per-team per-Compound fuel-corrected Degradation with shrinkage to the
+    field average, falling back to the field average when the team has no
+    running on a Compound.
     """
     classified = classify(pre_race, settings)
     team_lr = _fit_by_team_compound(
@@ -56,28 +74,35 @@ def team_degradation(
     )
 
     # Best signal per (team, compound): Long Runs preferred, Push Laps otherwise.
-    team_rate: dict[tuple[str, Compound], tuple[float, DegradationSource]] = {}
-    for key, rate in team_pl.items():
-        team_rate[key] = (rate, DegradationSource.PUSH_LAPS)
-    for key, rate in team_lr.items():
-        team_rate[key] = (rate, DegradationSource.LONG_RUNS)
+    team_raw: dict[tuple[str, Compound], tuple[float, int, DegradationSource]] = {}
+    for key, (rate, n) in team_pl.items():
+        team_raw[key] = (rate, n, DegradationSource.PUSH_LAPS)
+    for key, (rate, n) in team_lr.items():
+        team_raw[key] = (rate, n, DegradationSource.LONG_RUNS)
 
-    field_average: dict[Compound, float] = {}
-    for compound in DRY_COMPOUNDS:
-        measured = [r for (_, c), (r, _) in team_rate.items() if c == compound]
-        if measured:
-            field_average[compound] = fmean(measured)
-
+    k = settings.degradation_shrinkage_laps
     result: dict[str, dict[Compound, DegradationEstimate]] = {}
     for team in set(pre_race.teams.values()):
         per_compound: dict[Compound, DegradationEstimate] = {}
         for compound in DRY_COMPOUNDS:
-            if (team, compound) in team_rate:
-                rate, source = team_rate[(team, compound)]
-                per_compound[compound] = DegradationEstimate(rate, source)
-            elif compound in field_average:
+            own = team_raw.get((team, compound))
+            others = [
+                (r, n)
+                for (t, c), (r, n, _) in team_raw.items()
+                if c == compound and t != team
+            ]
+            field_avg = _weighted_mean(others)
+            if own is not None:
+                raw, n, source = own
+                blended = (
+                    (n * raw + k * field_avg) / (n + k)
+                    if field_avg is not None
+                    else raw
+                )
+                per_compound[compound] = DegradationEstimate(max(0.0, blended), source)
+            elif field_avg is not None:
                 per_compound[compound] = DegradationEstimate(
-                    field_average[compound], DegradationSource.FIELD_AVERAGE
+                    max(0.0, field_avg), DegradationSource.FIELD_AVERAGE
                 )
             else:
                 raise ValueError(
@@ -99,39 +124,53 @@ def base_lap_time(pre_race: PreRaceInfo, settings: Settings | None = None) -> fl
     )
 
 
+def _weighted_mean(samples: list[tuple[float, int]]) -> float | None:
+    """Lap-count-weighted mean of (rate, lap_count); None if no samples."""
+    if not samples:
+        return None
+    total_n = sum(n for _, n in samples)
+    if total_n <= 0:
+        return fmean(r for r, _ in samples)
+    return sum(r * n for r, n in samples) / total_n
+
+
 def _fit_by_team_compound(
     runs: list[list[Lap]],
     teams: dict[str, str],
     fuel_effect_s_per_lap: float,
-) -> dict[tuple[str, Compound], float]:
+) -> dict[tuple[str, Compound], tuple[float, int]]:
+    """Pooled raw rates per (team, Compound), with the lap count behind each."""
     by_team_compound: dict[tuple[str, Compound], list[list[Lap]]] = defaultdict(list)
     for run in runs:
         team = teams.get(run[0].driver)
         if team is None:
             continue
         by_team_compound[(team, run[0].compound)].append(run)
-    rates: dict[tuple[str, Compound], float] = {}
+    rates: dict[tuple[str, Compound], tuple[float, int]] = {}
     for key, grouped in by_team_compound.items():
-        rate = _fit_fuel_corrected_rate(grouped, fuel_effect_s_per_lap)
-        if rate is not None:
-            rates[key] = rate
+        fit = _fit_fuel_corrected_rate(grouped, fuel_effect_s_per_lap)
+        if fit is not None:
+            rates[key] = fit
     return rates
 
 
 def _fit_fuel_corrected_rate(
     runs: list[list[Lap]], fuel_effect_s_per_lap: float
-) -> float | None:
+) -> tuple[float, int] | None:
     """Pooled within-run least-squares slope of lap time against tyre age,
-    plus the fuel effect per lap. Clamped at zero: fuel correction makes
-    negative fits rare, but noise in a short run can still produce one.
+    plus the fuel effect per lap. Returns the raw rate (not clamped) and the
+    total lap count behind the fit. Clamping is deferred to the shrinkage
+    step so near-zero noisy fits don't drag the field average down.
     """
     sxy = sxx = 0.0
+    n = 0
     for run in runs:
         mean_age = fmean(lap.tyre_age for lap in run)
         mean_time = fmean(lap.lap_time for lap in run)
         for lap in run:
             sxy += (lap.tyre_age - mean_age) * (lap.lap_time - mean_time)
             sxx += (lap.tyre_age - mean_age) ** 2
+        n += len(run)
     if sxx <= 0:
         return None
-    return max(0.0, sxy / sxx + fuel_effect_s_per_lap)
+    return sxy / sxx + fuel_effect_s_per_lap, n

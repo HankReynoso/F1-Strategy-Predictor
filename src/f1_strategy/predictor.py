@@ -101,7 +101,12 @@ def _predict_driver(
     for strategy in legal_strategies():
         if not can_run(strategy.compounds, remaining):
             continue
-        race = simulate(strategy.compounds, rates, race_laps, pit_loss, base)
+        if len(strategy.compounds) * settings.min_stint_length > race_laps:
+            continue
+        race = simulate(
+            strategy.compounds, rates, race_laps, pit_loss, base,
+            settings.min_stint_length,
+        )
         simulated.append((strategy, race))
 
     simulated.sort(key=lambda pair: pair[1].race_time)
@@ -129,6 +134,7 @@ def _predict_driver(
                     rates,
                     race_laps,
                     settings.stop_window_margin_s,
+                    settings.min_stint_length,
                 )
             ),
         )

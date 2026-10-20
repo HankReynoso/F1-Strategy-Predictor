@@ -65,8 +65,11 @@ def test_each_planned_stop_reports_its_best_stop_lap():
     # Worked by hand. 12 laps; a Stint of L laps on a Compound losing d s/lap
     # costs d*L*(L-1)/2. M->H: stints 4+8 cost 0.1*12 + 0.05*56 = 4.0 (best).
     # H->M mirrors it: 8+4. S->H: stints 2+10 cost 0.25*2 + 0.05*90 = 5.0.
+    # Minimum Stint length is lowered to 1 so the 12-lap scenarios can place
+    # a stop near the start; ticket 13's default of 5 is defended elsewhere.
     prediction = predict(
-        weekend(standard_practice(soft=0.5, medium=0.2, hard=0.1), TEAMS, race_laps=12)
+        weekend(standard_practice(soft=0.5, medium=0.2, hard=0.1), TEAMS, race_laps=12),
+        Settings(min_stint_length=1),
     )["VER"]
 
     assert [s.best_lap for s in candidate(prediction, M, H).stops] == [4]
@@ -87,7 +90,7 @@ def test_candidate_strategies_beyond_the_plausible_margin_are_excluded():
     # exactly the six 1-stops.
     prediction = predict(
         weekend(standard_practice(soft=0.5, medium=0.2, hard=0.1), TEAMS, race_laps=12),
-        Settings(plausible_margin_s=10.0),
+        Settings(plausible_margin_s=10.0, min_stint_length=1),
     )["VER"]
 
     assert {c.strategy.compounds for c in prediction.candidates} == {
@@ -103,7 +106,7 @@ def test_each_planned_stop_reports_a_stop_window_within_the_stop_window_margin()
     # With a 0.25 s Stop Window margin, laps 3 to 5 are within it.
     prediction = predict(
         weekend(standard_practice(soft=0.5, medium=0.2, hard=0.1), TEAMS, race_laps=12),
-        Settings(stop_window_margin_s=0.25),
+        Settings(stop_window_margin_s=0.25, min_stint_length=1),
     )["VER"]
 
     (stop,) = candidate(prediction, M, H).stops
@@ -161,7 +164,8 @@ def test_default_settings_prune_to_plausible_strategies_with_multi_lap_stop_wind
 
 def test_candidates_are_ranked_and_probability_falls_as_simulated_race_time_rises():
     prediction = predict(
-        weekend(standard_practice(soft=0.5, medium=0.2, hard=0.1), TEAMS, race_laps=12)
+        weekend(standard_practice(soft=0.5, medium=0.2, hard=0.1), TEAMS, race_laps=12),
+        Settings(min_stint_length=1),
     )["VER"]
     candidates = prediction.candidates
 
@@ -528,7 +532,11 @@ def test_minimum_long_run_length_is_a_setting_with_a_default():
 
     assert default["VER"].team_degradation[S].source == DegradationSource.FIELD_AVERAGE
     assert short["VER"].team_degradation[S].source == DegradationSource.LONG_RUNS
-    assert short["VER"].team_degradation[S].rate == pytest.approx(0.1, abs=1e-6)
+    # Ticket 13: the 3-lap raw fit (0.1) is pulled toward LEC's ample 0.3 by
+    # shrinkage, so VER's own-fit rate sits between the two but is no longer
+    # exactly 0.1. The source still flips to LONG_RUNS, which is the setting's
+    # observable effect.
+    assert 0.1 < short["VER"].team_degradation[S].rate < 0.3
 
 
 # --- Ticket 04: Remaining Sets ------------------------------------------------
@@ -701,3 +709,154 @@ def test_remaining_sets_are_reported_on_the_prediction():
 
 # Keep the import linter from pruning Lap: used in the used-sets test.
 from f1_strategy import Lap  # noqa: E402
+
+
+# --- Ticket 13: shrinkage and minimum Stint length ---------------------------
+
+
+def test_short_slightly_negative_fit_gets_positive_rate_pulled_toward_field_average():
+    # Team A: a 4-lap Soft run whose raw slope (−0.05 s/lap, +0.03 fuel) sits
+    # slightly below zero. Teams B and C each ran a solid 8-lap Soft at 0.1
+    # s/lap raw. With `degradation_shrinkage_laps=4` and 4 own laps, the blend
+    # is 50/50 toward the leave-one-out field average of 0.1, so A lands near
+    # 0.05, clearly positive — not stuck at the old zero clamp.
+    teams = {"A1": "Alpha", "B1": "Bravo", "C1": "Charlie"}
+    short_negative = long_run("A1", "A-S1", S, [91.00, 90.95, 90.90, 90.85])
+    laps = [
+        *short_negative,
+        *degrading_run("A1", "A-M1", M, 0.07, first_lap=20),
+        *degrading_run("A1", "A-H1", H, 0.04, first_lap=40),
+        *degrading_run("B1", "B-S1", S, 0.10),
+        *degrading_run("B1", "B-M1", M, 0.07, first_lap=20),
+        *degrading_run("B1", "B-H1", H, 0.04, first_lap=40),
+        *degrading_run("C1", "C-S1", S, 0.10),
+        *degrading_run("C1", "C-M1", M, 0.07, first_lap=20),
+        *degrading_run("C1", "C-H1", H, 0.04, first_lap=40),
+    ]
+
+    predictions = predict(weekend(laps, teams))
+
+    alpha_soft = predictions["A1"].team_degradation[S]
+    assert alpha_soft.source == DegradationSource.LONG_RUNS
+    assert alpha_soft.rate > 0.0
+    # The field average seen by Alpha (leave-one-out) is 0.10; the shrunk
+    # rate is a meaningful blend of the two, well above zero.
+    assert alpha_soft.rate == pytest.approx(0.04, abs=0.01)
+
+
+def test_a_team_with_plenty_of_running_keeps_a_rate_close_to_its_own_fit():
+    # Team A: two solid 8-lap Soft Long Runs on different sets (16 laps total)
+    # at 0.08 s/lap. Team B: an 8-lap Soft Long Run at 0.30. With 16 own laps
+    # vs 4 equivalent-laps from the field average, A keeps ~80% of its own
+    # fit; the pulled rate is close to 0.08, not halfway to 0.30.
+    teams = {"A1": "Alpha", "B1": "Bravo"}
+    laps = [
+        *degrading_run("A1", "A-S1", S, 0.08),
+        *degrading_run("A1", "A-S2", S, 0.08, first_lap=20),
+        *degrading_run("A1", "A-M1", M, 0.07, first_lap=40),
+        *degrading_run("A1", "A-H1", H, 0.04, first_lap=50),
+        *degrading_run("B1", "B-S1", S, 0.30),
+        *degrading_run("B1", "B-M1", M, 0.07, first_lap=20),
+        *degrading_run("B1", "B-H1", H, 0.04, first_lap=40),
+    ]
+
+    predictions = predict(weekend(laps, teams))
+
+    alpha_soft = predictions["A1"].team_degradation[S]
+    assert alpha_soft.source == DegradationSource.LONG_RUNS
+    # Exact blend: (16 * 0.08 + 4 * 0.30) / 20 = 0.124.
+    assert alpha_soft.rate == pytest.approx(0.124, abs=1e-6)
+    # Closer to 0.08 (own fit) than to 0.19 (midpoint between own and field).
+    assert alpha_soft.rate < 0.19
+
+
+def test_one_teams_noisy_near_zero_fit_does_not_lower_the_field_average_for_others():
+    # Team A: a short 4-lap Soft fit that lands near zero (raw ~0 with the
+    # fuel effect). Teams B and C: large, clean 16-lap Soft runs at 0.10.
+    # The field average SEEN BY B is leave-one-out: lap-count-weighted mean
+    # across the other teams on Soft, i.e. (4*~0 + 16*0.10)/(4+16) = 0.08.
+    # So B's own shrunk rate stays close to its own 0.10 — A's zero does not
+    # drag what B is pulled toward below the trusted teams' values.
+    teams = {"A1": "Alpha", "B1": "Bravo", "C1": "Charlie"}
+    # A: 4 laps whose observed slope is -0.03 and raw rate (+0.03 fuel) is 0.
+    short_zero = long_run("A1", "A-S1", S, [91.00, 90.97, 90.94, 90.91])
+    laps = [
+        *short_zero,
+        *degrading_run("A1", "A-M1", M, 0.07, first_lap=20),
+        *degrading_run("A1", "A-H1", H, 0.04, first_lap=40),
+        *degrading_run("B1", "B-S1", S, 0.10, laps=16),
+        *degrading_run("B1", "B-M1", M, 0.07, first_lap=30),
+        *degrading_run("B1", "B-H1", H, 0.04, first_lap=50),
+        *degrading_run("C1", "C-S1", S, 0.10, laps=16),
+        *degrading_run("C1", "C-M1", M, 0.07, first_lap=30),
+        *degrading_run("C1", "C-H1", H, 0.04, first_lap=50),
+    ]
+
+    predictions = predict(weekend(laps, teams))
+
+    bravo_soft = predictions["B1"].team_degradation[S]
+    # B's leave-one-out field avg = (4*0 + 16*0.10)/20 = 0.08. With 16 own
+    # laps the blend is (16*0.10 + 4*0.08)/20 = 0.096. Well above 0.05.
+    assert bravo_soft.rate == pytest.approx(0.096, abs=1e-3)
+    assert bravo_soft.rate > 0.08
+
+
+def test_no_candidate_strategy_contains_a_stint_shorter_than_the_minimum():
+    # With default `min_stint_length=5`, every Stint across every Candidate
+    # Strategy of every driver must be at least 5 laps.
+    predictions = predict(weekend(standard_practice(), TEAMS))
+
+    for prediction in predictions.values():
+        for candidate in prediction.candidates:
+            # Reconstruct Stint lengths from the planned stops.
+            boundaries = [0, *[s.best_lap for s in candidate.stops], 57]
+            lengths = [b - a for a, b in zip(boundaries, boundaries[1:])]
+            for length in lengths:
+                assert length >= 5
+
+
+def test_no_stop_window_starts_before_the_minimum_stint_length():
+    # Same weekend as above; with default `min_stint_length=5`, no Stop Window
+    # may begin before lap 5 (any earlier stop would leave Stint 1 too short),
+    # and the final stop may not sit past lap `race_laps - 5`.
+    predictions = predict(weekend(standard_practice(), TEAMS))
+
+    for prediction in predictions.values():
+        for candidate in prediction.candidates:
+            stops = candidate.stops
+            for k, stop in enumerate(stops):
+                assert stop.first_lap >= 5 * (k + 1)
+                tail_stints = len(candidate.strategy.compounds) - (k + 1)
+                assert stop.last_lap <= 57 - 5 * tail_stints
+
+
+def test_on_a_very_flat_degradation_weekend_stop_windows_do_not_cover_the_whole_race():
+    # Before ticket 13, when one team's Long Run on a Compound got clamped to
+    # exactly 0, 1-stop Stop Windows for drivers on that team covered nearly
+    # the whole race (laps 1-61 at Singapore). The clamp is gone, so even a
+    # team whose own fit is near zero inherits the field's non-zero rate
+    # through shrinkage. On a weekend where every raw fit is near zero but
+    # the fuel-effect-only raw rate is 0.03 s/lap, 1-stop Stop Windows should
+    # be well short of the race distance (not within a few laps of the full
+    # feasible range).
+    teams = {"VER": "Red Bull Racing", "LEC": "Ferrari"}
+    flat_laps = [
+        *long_run("VER", "VER-S1", S, [90.0] * 8),
+        *long_run("VER", "VER-M1", M, [90.0] * 8, first_lap=20),
+        *long_run("VER", "VER-H1", H, [90.0] * 8, first_lap=40),
+        *long_run("LEC", "LEC-S1", S, [90.0] * 8),
+        *long_run("LEC", "LEC-M1", M, [90.0] * 8, first_lap=20),
+        *long_run("LEC", "LEC-H1", H, [90.0] * 8, first_lap=40),
+    ]
+    predictions = predict(weekend(flat_laps, teams))
+
+    for prediction in predictions.values():
+        for candidate in prediction.candidates:
+            if candidate.strategy.stops != 1:
+                continue
+            (stop,) = candidate.stops
+            width = stop.last_lap - stop.first_lap + 1
+            assert width <= 20, (
+                f"Stop Window laps {stop.first_lap}-{stop.last_lap} "
+                "spans too much of the race"
+            )
