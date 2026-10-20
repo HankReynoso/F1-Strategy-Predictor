@@ -19,7 +19,7 @@ The tyre type fitted for a Stint, named by its race designation (Soft, Medium, H
 _Avoid_: tyre, rubber
 
 **Stop Window**:
-The range of laps in which a planned pit stop is expected to happen.
+The range of laps in which a planned pit stop is expected to happen: every stop lap whose Simulated Race Time, with the Strategy's other stops moved to suit, is within a margin of the best stop lap.
 _Avoid_: pit window (fine in speech), stop lap
 
 **Deviation**:
@@ -82,7 +82,7 @@ A Strategy Prediction made during the race, updated as laps are completed.
 _Avoid_: in-race forecast
 
 **Plausible**:
-Describes a Candidate Strategy that is legal, runnable with the driver's Remaining Sets, and within a margin of the fastest simulated race time.
+Describes a Candidate Strategy that is legal, runnable with the driver's Remaining Sets, and within a margin (the Plausible margin) of the driver's fastest Simulated Race Time. A Strategy Prediction contains only Plausible Candidate Strategies.
 
 ### History
 

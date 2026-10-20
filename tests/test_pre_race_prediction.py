@@ -1,3 +1,4 @@
+import math
 from itertools import pairwise
 
 import pytest
@@ -9,6 +10,7 @@ from f1_strategy import (
     NotDryRaceError,
     RaceOutcome,
     RaceWeekend,
+    Settings,
     Stint,
     predict,
 )
@@ -30,7 +32,10 @@ def test_every_driver_gets_a_strategy_prediction_summing_to_100_percent():
 
 
 def test_candidate_strategies_are_every_legal_1_to_3_stop_strategy_and_never_single_compound():
-    prediction = predict(weekend(standard_practice(), TEAMS))["VER"]
+    # An unlimited Plausible margin shows every legal Strategy before pruning.
+    prediction = predict(
+        weekend(standard_practice(), TEAMS), Settings(plausible_margin_s=math.inf)
+    )["VER"]
     strategies = [c.strategy for c in prediction.candidates]
 
     # 3^2-3 two-stint + 3^3-3 three-stint + 3^4-3 four-stint sequences
@@ -58,6 +63,84 @@ def test_each_planned_stop_reports_its_best_stop_lap():
         - candidate(prediction, M, H).simulated_race_time
     )
     assert gap == pytest.approx(1.0)
+
+
+def test_candidate_strategies_beyond_the_plausible_margin_are_excluded():
+    # Worked by hand. 12 laps, 22 s Pit Loss, S/M/H lose 0.5/0.2/0.1 s/lap.
+    # Best Degradation cost per 1-stop: M/H 4.0, S/H 5.0, S/M 8.6 (either
+    # order). A 2-stop pays another 22 s of Pit Loss and can save at most the
+    # 4.0 s, so it is at least 18 s behind. A 10 s Plausible margin keeps
+    # exactly the six 1-stops.
+    prediction = predict(
+        weekend(standard_practice(soft=0.5, medium=0.2, hard=0.1), TEAMS, race_laps=12),
+        Settings(plausible_margin_s=10.0),
+    )["VER"]
+
+    assert {c.strategy.compounds for c in prediction.candidates} == {
+        (M, H), (H, M), (S, H), (H, S), (S, M), (M, S)
+    }
+    assert sum(c.probability for c in prediction.candidates) == pytest.approx(1.0)
+
+
+def test_each_planned_stop_reports_a_stop_window_within_the_stop_window_margin():
+    # Worked by hand. 12 laps, M loses 0.2 s/lap and H 0.1 s/lap. For M->H
+    # stopping on lap p costs 0.1*p*(p-1) + 0.05*(12-p)*(11-p):
+    #   p=2: 4.7  p=3: 4.2  p=4: 4.0 (best)  p=5: 4.1  p=6: 4.5
+    # With a 0.25 s Stop Window margin, laps 3 to 5 are within it.
+    prediction = predict(
+        weekend(standard_practice(soft=0.5, medium=0.2, hard=0.1), TEAMS, race_laps=12),
+        Settings(stop_window_margin_s=0.25),
+    )["VER"]
+
+    (stop,) = candidate(prediction, M, H).stops
+    assert (stop.first_lap, stop.best_lap, stop.last_lap) == (3, 4, 5)
+
+
+def test_low_degradation_gives_a_wider_stop_window_than_high_degradation():
+    # Worked by hand for M->H over 57 laps: stopping on lap p costs
+    # dM*p*(p-1)/2 + dH*(57-p)*(56-p)/2, best at lap 21 either way.
+    # At 0.07/0.04 s/lap, laps 17-25 are within 1 s of the best (laps 16
+    # and 26 are 1.3 and 1.45 s off); at double the Degradation every gap
+    # doubles, so only laps 18-23 stay within 1 s.
+    settings = Settings(stop_window_margin_s=1.0)
+    low = predict(
+        weekend(standard_practice(soft=0.12, medium=0.07, hard=0.04), TEAMS), settings
+    )["VER"]
+    high = predict(
+        weekend(standard_practice(soft=0.24, medium=0.14, hard=0.08), TEAMS), settings
+    )["VER"]
+
+    (low_stop,) = candidate(low, M, H).stops
+    (high_stop,) = candidate(high, M, H).stops
+    assert (low_stop.first_lap, low_stop.best_lap, low_stop.last_lap) == (17, 21, 25)
+    assert (high_stop.first_lap, high_stop.best_lap, high_stop.last_lap) == (18, 21, 23)
+
+
+def test_a_two_stop_stop_window_lets_the_other_stop_move_to_suit():
+    # Worked by brute force over every pair of stop laps for H->M->H over 57
+    # laps (H 0.04, M 0.07 s/lap): best stops are laps 22 and 35. Letting the
+    # other stop move to suit, laps 17-27 and 30-40 are within 1 s of the
+    # best. Holding the other stop fixed would give only 18-26 and 31-39.
+    prediction = predict(
+        weekend(standard_practice(), TEAMS), Settings(stop_window_margin_s=1.0)
+    )["VER"]
+
+    first, second = candidate(prediction, H, M, H).stops
+    assert (first.first_lap, first.best_lap, first.last_lap) == (17, 22, 27)
+    assert (second.first_lap, second.best_lap, second.last_lap) == (30, 35, 40)
+
+
+def test_default_settings_prune_to_plausible_strategies_with_multi_lap_stop_windows():
+    # With 57 laps and 22 s Pit Loss, the best 1-stop beats every 3-stop by
+    # well over the default Plausible margin, so no 3-stop is shown.
+    prediction = predict(weekend(standard_practice(), TEAMS))["VER"]
+
+    assert prediction.candidates
+    assert all(c.strategy.stops <= 2 for c in prediction.candidates)
+    assert sum(c.probability for c in prediction.candidates) == pytest.approx(1.0)
+    for c in prediction.candidates:
+        for stop in c.stops:
+            assert stop.first_lap < stop.best_lap < stop.last_lap
 
 
 def test_candidates_are_ranked_and_probability_falls_as_simulated_race_time_rises():

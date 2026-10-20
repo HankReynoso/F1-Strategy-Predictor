@@ -58,7 +58,7 @@ This is the thin end-to-end slice that later specs build on: the full Backtest a
 29. As an F1 fan, I want to see where each team's Degradation estimate came from (Long Runs, Push Laps, or field average), so that I know how much to trust it.
 30. As an F1 fan, I want Pit Loss measured from previous seasons' races at the same circuit, so that the cost of a stop reflects that circuit.
 31. As an F1 fan, I want each Candidate Strategy's Simulated Race Time to combine Degradation, fuel effect and Pit Loss over the race distance, so that the core trade-off of fresh tyres against time lost in the pits is captured.
-32. As an F1 fan, I want each Stop Window to cover every stop lap whose Simulated Race Time is within a small margin of the best stop lap, so that flat trade-offs give wide windows and sharp ones give narrow windows.
+32. As an F1 fan, I want each Stop Window to cover every stop lap whose Simulated Race Time is within a small margin of the best stop lap, with the Strategy's other stops moved to suit, so that flat trade-offs give wide windows and sharp ones give narrow windows.
 33. As a developer, I want the Stop Window margin to be a setting, so that it can be tuned by Backtesting.
 34. As an F1 fan, I want probabilities to fall off as a Candidate Strategy's Simulated Race Time gets further from the fastest, so that nearly-as-fast options stay plausible.
 35. As a developer, I want how sharply probability falls off with time gap to be a setting, so that it can be tuned by Backtesting.
@@ -101,7 +101,7 @@ This is the thin end-to-end slice that later specs build on: the full Backtest a
   - **Pit Loss estimator.** Measures typical time lost per stop at the circuit from previous seasons' races.
   - **Tyre Allocation tracker.** Works out each driver's Remaining Sets (by Compound, new vs used) from sets used before the race.
   - **Strategy generator.** Enumerates legal Strategies (1–3 stops, at least two different dry Compounds) and drops those a driver can't run with their Remaining Sets.
-  - **Race simulator.** Computes the Simulated Race Time for a Strategy and the best stop laps, and derives Stop Windows using the Stop Window margin. In this version, a driver's base pace doesn't affect the comparison between their own Candidate Strategies, so no car-pace model is needed.
+  - **Race simulator.** Computes the Simulated Race Time for a Strategy and the best stop laps, and derives Stop Windows using the Stop Window margin. When scoring one stop on a given lap, the other stops are re-optimised (decided in ticket 05). In this version, a driver's base pace doesn't affect the comparison between their own Candidate Strategies, so no car-pace model is needed.
   - **Predictor.** Orchestrates the steps above for every driver: applies the Plausible margin, turns time gaps into probabilities with a tunable sharpness setting, and returns one Strategy Prediction per driver.
   - **Scorer.** Extracts actual Strategies from race Stints and reports Strategy Match (top-1 and top-3), Stop Window hits, the Neutralised Race flag, unscoreable drivers, and a race summary.
 - **Main public interface.** One call: race weekend description in, a Strategy Prediction per driver out. A second call takes those predictions plus the race's actual Stints and returns the comparison. All tunable settings (Plausible margin, Stop Window margin, probability sharpness, Long Run thresholds, fuel effect per lap) are passed in as one settings object with sensible defaults.
@@ -148,4 +148,4 @@ Raised while implementing ticket 01 (2026-10-19). Not yet decided.
 
 - **Compound pace.** User story 31 defines Simulated Race Time from Degradation, fuel effect and Pit Loss only. It leaves out that softer Compounds are quicker when fresh. Without that, Softs only win on low Degradation and almost never appear as favourites, which will hurt Strategy Match. The term isn't in `CONTEXT.md` yet; if it's adopted, settle the name via `/domain-modeling`. Ticket 02 is the natural place to add it, since per-team fits produce a pace intercept per Compound.
 - **Base pace placeholder.** Simulated Race Time includes race laps × the fastest Long Run lap in the field. It doesn't affect rankings (it's the same for all of a driver's Candidate Strategies) but means the absolute time isn't a real estimate. Fine until a car-pace model exists, which this spec rules out.
-- **Mirrored Strategies tie.** M → H and H → M always have identical Simulated Race Times because nothing depends on Compound order. See ticket 05.
+- **Mirrored Strategies tie.** M → H and H → M always have identical Simulated Race Times because nothing depends on Compound order. Deferred in ticket 05; see ticket 09.

@@ -6,7 +6,7 @@ from itertools import product
 
 from .degradation import base_lap_time, field_degradation
 from .settings import Settings
-from .simulator import simulate
+from .simulator import simulate, stop_windows
 from .weekend import DRY_COMPOUNDS, Compound, RaceWeekend
 
 
@@ -25,7 +25,11 @@ class Strategy:
 
 @dataclass(frozen=True)
 class PlannedStop:
+    """A planned pit stop: its Stop Window (first to last lap) and best stop lap."""
+
+    first_lap: int
     best_lap: int
+    last_lap: int
 
 
 @dataclass(frozen=True)
@@ -65,12 +69,22 @@ def predict(
     simulated = []
     for strategy in legal_strategies():
         race = simulate(
-            strategy.compounds, degradation, pre_race.race_laps, pre_race.pit_loss, base
+            strategy.compounds,
+            degradation,
+            pre_race.race_laps,
+            pre_race.pit_loss,
+            base,
         )
         simulated.append((strategy, race))
 
     simulated.sort(key=lambda pair: pair[1].race_time)
     fastest = simulated[0][1].race_time
+    # Only Plausible Candidate Strategies remain.
+    simulated = [
+        (strategy, race)
+        for strategy, race in simulated
+        if race.race_time - fastest <= settings.plausible_margin_s
+    ]
     weights = [
         math.exp(-(race.race_time - fastest) / settings.probability_scale_s)
         for _, race in simulated
@@ -81,7 +95,15 @@ def predict(
             strategy=strategy,
             probability=weight / total,
             simulated_race_time=race.race_time,
-            stops=tuple(PlannedStop(lap) for lap in race.best_stop_laps),
+            stops=tuple(
+                PlannedStop(w.first_lap, w.best_lap, w.last_lap)
+                for w in stop_windows(
+                    strategy.compounds,
+                    degradation,
+                    pre_race.race_laps,
+                    settings.stop_window_margin_s,
+                )
+            ),
         )
         for (strategy, race), weight in zip(simulated, weights)
     )

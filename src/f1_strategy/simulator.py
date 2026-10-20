@@ -1,9 +1,14 @@
-"""Race simulator: Simulated Race Time and best stop laps for one Strategy.
+"""Race simulator: Simulated Race Time, best stop laps and Stop Windows for one Strategy.
 
 A Stint of L laps on a Compound losing d seconds per lap costs d*L*(L-1)/2
 over fresh-tyre pace. Each stop costs the circuit's Pit Loss. Stint lengths are
 chosen to minimise total time: the cost is separable and convex, so handing
 out laps one at a time to the Stint with the cheapest next lap is optimal.
+
+Stop Windows: to score stop k on lap p, the race is split at p and the Stints
+on either side are re-optimised (the other stops move to suit). That time is
+convex in p, so the laps within the Stop Window margin of the best form one
+unbroken range.
 """
 
 from dataclasses import dataclass
@@ -12,17 +17,16 @@ from .weekend import Compound
 
 
 @dataclass(frozen=True)
+class StopWindow:
+    first_lap: int
+    best_lap: int
+    last_lap: int
+
+
+@dataclass(frozen=True)
 class SimulatedRace:
     race_time: float
     stint_lengths: tuple[int, ...]
-
-    @property
-    def best_stop_laps(self) -> tuple[int, ...]:
-        laps, total = [], 0
-        for length in self.stint_lengths[:-1]:
-            total += length
-            laps.append(total)
-        return tuple(laps)
 
 
 def simulate(
@@ -32,12 +36,42 @@ def simulate(
     pit_loss: float,
     base_lap_time: float,
 ) -> SimulatedRace:
-    rates = [degradation[c] for c in compounds]
-    lengths = [1] * len(compounds)
-    for _ in range(race_laps - len(compounds)):
-        cheapest = min(range(len(lengths)), key=lambda i: rates[i] * lengths[i])
-        lengths[cheapest] += 1
-
-    tyre_cost = sum(d * n * (n - 1) / 2 for d, n in zip(rates, lengths))
+    lengths, tyre_cost = _allocate([degradation[c] for c in compounds], race_laps)
     race_time = race_laps * base_lap_time + tyre_cost + pit_loss * (len(compounds) - 1)
     return SimulatedRace(race_time, tuple(lengths))
+
+
+def stop_windows(
+    compounds: tuple[Compound, ...],
+    degradation: dict[Compound, float],
+    race_laps: int,
+    stop_window_margin: float,
+) -> tuple[StopWindow, ...]:
+    """One Stop Window per stop, with the other stops re-optimised as it moves."""
+    rates = [degradation[c] for c in compounds]
+    lengths, best_cost = _allocate(rates, race_laps)
+    windows = []
+    best_lap = 0
+    for k in range(1, len(compounds)):
+        best_lap += lengths[k - 1]
+        before, after = rates[:k], rates[k:]
+        # Each side needs at least one lap per Stint.
+        laps = range(len(before), race_laps - len(after) + 1)
+        within = [
+            p
+            for p in laps
+            if _allocate(before, p)[1] + _allocate(after, race_laps - p)[1]
+            <= best_cost + stop_window_margin + 1e-9
+        ]
+        windows.append(StopWindow(min(within), best_lap, max(within)))
+    return tuple(windows)
+
+
+def _allocate(rates: list[float], laps: int) -> tuple[list[int], float]:
+    """Cheapest Stint lengths for `laps` laps over Stints with these rates."""
+    lengths = [1] * len(rates)
+    for _ in range(laps - len(rates)):
+        cheapest = min(range(len(lengths)), key=lambda i: rates[i] * lengths[i])
+        lengths[cheapest] += 1
+    cost = sum(d * n * (n - 1) / 2 for d, n in zip(rates, lengths))
+    return lengths, cost

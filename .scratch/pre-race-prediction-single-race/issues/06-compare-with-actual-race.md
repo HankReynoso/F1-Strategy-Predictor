@@ -18,3 +18,5 @@
 ## Comments
 
 **From ticket 01 (2026-10-19).** The race weekend description's `Stint` has driver, Compound, start lap and end lap, and `NeutralisationPeriod` has kind and laps. There is no finishing status, so "retired" can only be inferred from a last Stint ending before `PreRaceInfo.race_laps`. That misses lapped finishers (who end on fewer laps without retiring). Consider adding a finishing status to `RaceOutcome`, populated by the loader in 07.
+
+**From ticket 05 (2026-10-19).** Each `PlannedStop` carries `first_lap`, `best_lap` and `last_lap`. Because the other stops are re-optimised when one stop moves, consecutive Stop Windows of a multi-stop Strategy can overlap (e.g. H → S → H: laps 19–29 and 28–38). Score the n-th actual stop against the n-th predicted Stop Window, not against whichever window contains the lap. Predictions now contain only Plausible Candidate Strategies, so a driver's actual Strategy may be absent from their prediction; that should count as neither top-1 nor top-3.
