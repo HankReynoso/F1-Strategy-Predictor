@@ -64,8 +64,8 @@ def predict(
     _require_dry_race(weekend)
     # Everything below reads only pre-race information.
     pre_race = weekend.pre_race
-    team_rates = team_degradation(pre_race, settings.fuel_effect_s_per_lap)
-    base = base_lap_time(pre_race)
+    team_rates = team_degradation(pre_race, settings)
+    base = base_lap_time(pre_race, settings)
 
     predictions: dict[str, StrategyPrediction] = {}
     for driver, team in pre_race.teams.items():

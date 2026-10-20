@@ -2,15 +2,25 @@ import math
 from itertools import pairwise
 
 import pytest
-from weekend_builder import TEAMS, degrading_run, long_run, standard_practice, weekend
+from weekend_builder import (
+    TEAMS,
+    degrading_run,
+    long_run,
+    push_lap_set,
+    standard_practice,
+    weekend,
+)
 
 from f1_strategy import (
     Compound,
     DegradationSource,
+    Lap,
     NeutralisationPeriod,
     NotDryRaceError,
+    PreRaceInfo,
     RaceOutcome,
     RaceWeekend,
+    Session,
     Settings,
     Stint,
     predict,
@@ -341,3 +351,176 @@ def test_a_long_run_that_only_improves_from_fuel_burn_fits_to_zero_degradation()
     assert best_one_stop.simulated_race_time == pytest.approx(57 * base + 22.0)
     for compound, estimate in prediction.team_degradation.items():
         assert estimate.rate == pytest.approx(0.0), compound
+
+
+# --- Ticket 03: Long Run and Push Lap recognition -----------------------------
+
+NO_FUEL = Settings(fuel_effect_s_per_lap=0.0)
+SOLO_TEAM = {"VER": "Red Bull Racing"}
+
+
+def _flat_other_compounds(driver: str, prefix: str) -> list[Lap]:
+    """Clean, zero-Degradation Long Runs on Mediums and Hards for one driver.
+
+    With `fuel_effect_s_per_lap=0.0` these fit to 0 rate exactly, so Softs is
+    the only Compound whose source and rate the test needs to reason about.
+    """
+    return [
+        *long_run(driver, f"{prefix}-M1", M, [90.0] * 8, first_lap=20),
+        *long_run(driver, f"{prefix}-H1", H, [90.0] * 8, first_lap=40),
+    ]
+
+
+def test_slow_fast_slow_pattern_on_a_tyre_set_is_never_treated_as_long_run():
+    # Classic push-cool-push-cool pattern on Softs: no consistent run exists,
+    # so the set must not count as a Long Run. VER's Soft source is Push Laps.
+    laps = [
+        *push_lap_set("VER", "VER-S1", S, [92.0, 89.0, 91.0, 89.2, 91.0]),
+        *_flat_other_compounds("VER", "VER"),
+    ]
+
+    prediction = predict(weekend(laps, SOLO_TEAM), NO_FUEL)["VER"]
+
+    assert prediction.team_degradation[S].source == DegradationSource.PUSH_LAPS
+
+
+def test_team_with_push_laps_but_no_long_runs_uses_push_lap_fall_off():
+    # Two Push Laps on one Tyre Set at ages 2 and 4, times 89.0 and 89.4.
+    # Fall-off = (89.4 - 89.0) / (4 - 2) = 0.2 s/lap. Zero fuel effect so the
+    # fitted rate equals the fall-off exactly.
+    laps = [
+        *push_lap_set("VER", "VER-S1", S, [92.0, 89.0, 91.0, 89.4, 91.0]),
+        *_flat_other_compounds("VER", "VER"),
+    ]
+
+    prediction = predict(weekend(laps, SOLO_TEAM), NO_FUEL)["VER"]
+
+    assert prediction.team_degradation[S].source == DegradationSource.PUSH_LAPS
+    assert prediction.team_degradation[S].rate == pytest.approx(0.2)
+
+
+def test_several_push_laps_on_one_tyre_set_are_grouped_so_fall_off_is_measurable():
+    # Three Push Laps on the same Tyre Set at ages 2, 4 and 6: times 89.0,
+    # 89.3 and 89.6. A single Push Lap can tell us nothing about fall-off;
+    # grouping them per set recovers the 0.15 s/lap slope.
+    laps = [
+        *push_lap_set(
+            "VER", "VER-S1", S, [92.0, 89.0, 91.0, 89.3, 91.0, 89.6, 91.0]
+        ),
+        *_flat_other_compounds("VER", "VER"),
+    ]
+
+    prediction = predict(weekend(laps, SOLO_TEAM), NO_FUEL)["VER"]
+
+    assert prediction.team_degradation[S].source == DegradationSource.PUSH_LAPS
+    assert prediction.team_degradation[S].rate == pytest.approx(0.15)
+
+
+def test_team_with_neither_long_runs_nor_push_laps_uses_field_average():
+    # LEC has Push Laps on Softs (rate 0.2); VER did no Softs at all. VER's
+    # Soft Degradation falls back to the field average, which is LEC's rate.
+    teams = {"VER": "Red Bull Racing", "LEC": "Ferrari"}
+    laps = [
+        *_flat_other_compounds("VER", "VER"),
+        *push_lap_set("LEC", "LEC-S1", S, [92.0, 89.0, 91.0, 89.4, 91.0]),
+        *_flat_other_compounds("LEC", "LEC"),
+    ]
+
+    predictions = predict(weekend(laps, teams), NO_FUEL)
+
+    assert predictions["LEC"].team_degradation[S].source == DegradationSource.PUSH_LAPS
+    assert predictions["VER"].team_degradation[S].source == DegradationSource.FIELD_AVERAGE
+    assert predictions["VER"].team_degradation[S].rate == pytest.approx(
+        predictions["LEC"].team_degradation[S].rate
+    )
+
+
+def test_an_abnormally_slow_lap_inside_a_long_run_does_not_distort_degradation():
+    # A Long Run of 10 Soft laps whose slope is 0.1 s/lap, with lap 5 made
+    # 5 s slow by traffic. The slow lap is dropped so the fit stays at 0.1.
+    traffic = [90.0 + 0.1 * i for i in range(10)]
+    traffic[4] += 5.0
+    laps = [
+        *long_run("VER", "VER-S1", S, traffic),
+        *_flat_other_compounds("VER", "VER"),
+    ]
+
+    prediction = predict(weekend(laps, SOLO_TEAM), NO_FUEL)["VER"]
+
+    assert prediction.team_degradation[S].source == DegradationSource.LONG_RUNS
+    assert prediction.team_degradation[S].rate == pytest.approx(0.1, abs=1e-6)
+
+
+def test_pit_in_and_pit_out_laps_do_not_distort_long_run_degradation():
+    # A Long Run on Softs bookended by a pit-out lap at the start and a
+    # pit-in lap at the end: both are the length of a pit-lane transit (20 s
+    # slower than the real stint) and must be excluded from the fit.
+    inner = [
+        Lap(driver="VER", lap_number=2 + i, lap_time=90.0 + 0.1 * i, tyre_set="VER-S1",
+            compound=S, tyre_age=2 + i, new_when_fitted=True)
+        for i in range(8)
+    ]
+    s_laps = [
+        Lap(driver="VER", lap_number=1, lap_time=110.0, tyre_set="VER-S1", compound=S,
+            tyre_age=1, new_when_fitted=True, pit_out=True),
+        *inner,
+        Lap(driver="VER", lap_number=10, lap_time=112.0, tyre_set="VER-S1", compound=S,
+            tyre_age=10, new_when_fitted=True, pit_in=True),
+    ]
+    laps = [*s_laps, *_flat_other_compounds("VER", "VER")]
+
+    prediction = predict(weekend(laps, SOLO_TEAM), NO_FUEL)["VER"]
+
+    assert prediction.team_degradation[S].source == DegradationSource.LONG_RUNS
+    assert prediction.team_degradation[S].rate == pytest.approx(0.1, abs=1e-6)
+
+
+def test_sprint_race_stints_count_as_long_runs_on_sprint_weekends():
+    # VER has no FP running on Softs; the Sprint race on Softs is a single
+    # 15-lap consecutive-lap Stint at 0.1 s/lap. It must be treated as a Long
+    # Run even though it comes from a session named "S" (Sprint race).
+    sprint_laps = long_run("VER", "VER-S-sprint", S, [90.0 + 0.1 * i for i in range(15)])
+    fp_laps = _flat_other_compounds("VER", "VER")
+    sprint_weekend = RaceWeekend(
+        pre_race=PreRaceInfo(
+            circuit="Test",
+            season=2024,
+            race_laps=57,
+            is_sprint_weekend=True,
+            sessions=(
+                Session(name="FP1", laps=tuple(fp_laps)),
+                Session(name="S", laps=tuple(sprint_laps)),
+            ),
+            teams=SOLO_TEAM,
+            pit_loss=22.0,
+        ),
+        race=RaceOutcome(),
+    )
+
+    prediction = predict(sprint_weekend, NO_FUEL)["VER"]
+
+    assert prediction.team_degradation[S].source == DegradationSource.LONG_RUNS
+    assert prediction.team_degradation[S].rate == pytest.approx(0.1, abs=1e-6)
+
+
+def test_minimum_long_run_length_is_a_setting_with_a_default():
+    # A 3-lap Softs run on its own is not a Long Run under the default
+    # min_long_run_length. Dropping the setting to 3 flips VER's Softs from
+    # the field-average fallback to its own Long Run fit.
+    teams = {"VER": "Red Bull Racing", "LEC": "Ferrari"}
+    laps = [
+        *long_run("VER", "VER-S1", S, [90.0, 90.1, 90.2]),
+        *_flat_other_compounds("VER", "VER"),
+        *degrading_run("LEC", "LEC-S1", S, 0.3, fuel_burn=0.0),
+        *_flat_other_compounds("LEC", "LEC"),
+    ]
+
+    default = predict(weekend(laps, teams), NO_FUEL)
+    short = predict(
+        weekend(laps, teams),
+        Settings(fuel_effect_s_per_lap=0.0, min_long_run_length=3),
+    )
+
+    assert default["VER"].team_degradation[S].source == DegradationSource.FIELD_AVERAGE
+    assert short["VER"].team_degradation[S].source == DegradationSource.LONG_RUNS
+    assert short["VER"].team_degradation[S].rate == pytest.approx(0.1, abs=1e-6)

@@ -1,14 +1,15 @@
-"""Degradation model: fuel-corrected Long Run fits, per team per Compound.
+"""Degradation model: per-Compound per-team rates with a three-step fallback.
 
-Each Long Run is a run of consecutive laps on one Tyre Set. We fit a per-lap
-Degradation rate as the pooled within-Long-Run least-squares slope of lap time
-against tyre age, grouped by team and Compound, then add the fuel effect
-setting back on so the slope reflects pure tyre wear rather than the car
-getting lighter.
-
-A team with no Long Runs on a Compound uses the field average: the mean of
-the fitted rates from teams that do have Long Runs on it. Every estimate
-records whether it came from the team's own Long Runs or the field average.
+Each team's Degradation on a Compound is fitted from fuel-corrected lap
+times. The best signal is the team's own **Long Runs**: a pooled
+within-run least-squares slope of lap time against tyre age, with the fuel
+effect setting added back on so the slope reflects pure tyre wear. When
+the team has no Long Runs on a Compound, we fall back to its **Push Laps**
+on that Compound, fitted the same way across the Push Laps grouped per
+Tyre Set. When neither is available, we fall back to the **field average**:
+the mean of the best-available fitted rate across the other teams that do
+have running on the Compound. Each estimate records which source it came
+from.
 """
 
 from collections import defaultdict
@@ -16,6 +17,8 @@ from dataclasses import dataclass
 from enum import Enum
 from statistics import fmean
 
+from .run_classifier import classify
+from .settings import Settings
 from .weekend import DRY_COMPOUNDS, Compound, Lap, PreRaceInfo
 
 
@@ -23,6 +26,7 @@ class DegradationSource(Enum):
     """Where a team's per-Compound Degradation estimate came from."""
 
     LONG_RUNS = "long_runs"
+    PUSH_LAPS = "push_laps"
     FIELD_AVERAGE = "field_average"
 
 
@@ -32,79 +36,86 @@ class DegradationEstimate:
     source: DegradationSource
 
 
-def long_runs(pre_race: PreRaceInfo) -> list[list[Lap]]:
-    runs: list[list[Lap]] = []
-    for session in pre_race.sessions:
-        by_set: dict[tuple[str, str], list[Lap]] = defaultdict(list)
-        for lap in session.laps:
-            by_set[(lap.driver, lap.tyre_set)].append(lap)
-        for laps in by_set.values():
-            laps.sort(key=lambda lap: lap.lap_number)
-            run = [laps[0]]
-            for lap in laps[1:]:
-                if lap.lap_number == run[-1].lap_number + 1:
-                    run.append(lap)
-                else:
-                    runs.append(run)
-                    run = [lap]
-            runs.append(run)
-    return [run for run in runs if len(run) >= 2]
+def long_runs(pre_race: PreRaceInfo, settings: Settings | None = None) -> list[list[Lap]]:
+    """Long Runs classified from this weekend's practice sessions."""
+    return classify(pre_race, settings or Settings()).long_runs
 
 
 def team_degradation(
-    pre_race: PreRaceInfo, fuel_effect_s_per_lap: float
+    pre_race: PreRaceInfo, settings: Settings
 ) -> dict[str, dict[Compound, DegradationEstimate]]:
-    """Per-team per-Compound fuel-corrected Degradation, with a per-Compound
-    field-average fallback for teams that have no Long Runs on a Compound.
+    """Per-team per-Compound fuel-corrected Degradation with a three-step
+    fallback: team Long Runs, then team Push Laps, then the field average.
     """
-    by_team_compound: dict[tuple[str, Compound], list[list[Lap]]] = defaultdict(list)
-    for run in long_runs(pre_race):
-        team = pre_race.teams.get(run[0].driver)
-        if team is None:
-            continue
-        by_team_compound[(team, run[0].compound)].append(run)
+    classified = classify(pre_race, settings)
+    team_lr = _fit_by_team_compound(
+        classified.long_runs, pre_race.teams, settings.fuel_effect_s_per_lap
+    )
+    team_pl = _fit_by_team_compound(
+        classified.push_lap_groups, pre_race.teams, settings.fuel_effect_s_per_lap
+    )
 
-    team_rates: dict[tuple[str, Compound], float] = {}
-    for key, runs in by_team_compound.items():
-        rate = _fit_fuel_corrected_rate(runs, fuel_effect_s_per_lap)
-        if rate is not None:
-            team_rates[key] = rate
+    # Best signal per (team, compound): Long Runs preferred, Push Laps otherwise.
+    team_rate: dict[tuple[str, Compound], tuple[float, DegradationSource]] = {}
+    for key, rate in team_pl.items():
+        team_rate[key] = (rate, DegradationSource.PUSH_LAPS)
+    for key, rate in team_lr.items():
+        team_rate[key] = (rate, DegradationSource.LONG_RUNS)
 
     field_average: dict[Compound, float] = {}
     for compound in DRY_COMPOUNDS:
-        measured = [r for (_, c), r in team_rates.items() if c == compound]
+        measured = [r for (_, c), (r, _) in team_rate.items() if c == compound]
         if measured:
             field_average[compound] = fmean(measured)
 
-    teams = set(pre_race.teams.values())
     result: dict[str, dict[Compound, DegradationEstimate]] = {}
-    for team in teams:
+    for team in set(pre_race.teams.values()):
         per_compound: dict[Compound, DegradationEstimate] = {}
         for compound in DRY_COMPOUNDS:
-            if (team, compound) in team_rates:
-                per_compound[compound] = DegradationEstimate(
-                    team_rates[(team, compound)], DegradationSource.LONG_RUNS
-                )
+            if (team, compound) in team_rate:
+                rate, source = team_rate[(team, compound)]
+                per_compound[compound] = DegradationEstimate(rate, source)
             elif compound in field_average:
                 per_compound[compound] = DegradationEstimate(
                     field_average[compound], DegradationSource.FIELD_AVERAGE
                 )
             else:
                 raise ValueError(
-                    f"No Long Runs on {compound.name.title()} across the field; "
-                    "cannot estimate Degradation."
+                    f"No Long Runs or Push Laps on {compound.name.title()} across "
+                    "the field; cannot estimate Degradation."
                 )
         result[team] = per_compound
     return result
 
 
-def base_lap_time(pre_race: PreRaceInfo) -> float:
+def base_lap_time(pre_race: PreRaceInfo, settings: Settings | None = None) -> float:
     """Fresh-tyre pace placeholder: the fastest Long Run lap in the field.
 
     It is the same for every Candidate Strategy of a driver, so it does not
     affect rankings; it only makes Simulated Race Time read as a race time.
     """
-    return min(lap.lap_time for run in long_runs(pre_race) for lap in run)
+    return min(
+        lap.lap_time for run in long_runs(pre_race, settings) for lap in run
+    )
+
+
+def _fit_by_team_compound(
+    runs: list[list[Lap]],
+    teams: dict[str, str],
+    fuel_effect_s_per_lap: float,
+) -> dict[tuple[str, Compound], float]:
+    by_team_compound: dict[tuple[str, Compound], list[list[Lap]]] = defaultdict(list)
+    for run in runs:
+        team = teams.get(run[0].driver)
+        if team is None:
+            continue
+        by_team_compound[(team, run[0].compound)].append(run)
+    rates: dict[tuple[str, Compound], float] = {}
+    for key, grouped in by_team_compound.items():
+        rate = _fit_fuel_corrected_rate(grouped, fuel_effect_s_per_lap)
+        if rate is not None:
+            rates[key] = rate
+    return rates
 
 
 def _fit_fuel_corrected_rate(
@@ -112,7 +123,7 @@ def _fit_fuel_corrected_rate(
 ) -> float | None:
     """Pooled within-run least-squares slope of lap time against tyre age,
     plus the fuel effect per lap. Clamped at zero: fuel correction makes
-    negative fits rare, but noise in a short Long Run can still produce one.
+    negative fits rare, but noise in a short run can still produce one.
     """
     sxy = sxx = 0.0
     for run in runs:

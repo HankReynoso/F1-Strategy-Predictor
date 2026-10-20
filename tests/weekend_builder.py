@@ -11,6 +11,33 @@ from f1_strategy import (
 )
 
 
+def push_lap_set(
+    driver: str,
+    tyre_set: str,
+    compound: Compound,
+    lap_times: list[float],
+    first_lap: int = 1,
+) -> list[Lap]:
+    """A Tyre Set of consecutive laps simulating slow-fast-slow Push Lap running.
+
+    Unlike `long_run`, the caller passes a hand-picked pattern (e.g.
+    `[slow, fast, slow, fast, slow]`) so the classifier can be exercised
+    directly.
+    """
+    return [
+        Lap(
+            driver=driver,
+            lap_number=first_lap + i,
+            lap_time=t,
+            tyre_set=tyre_set,
+            compound=compound,
+            tyre_age=i + 1,
+            new_when_fitted=True,
+        )
+        for i, t in enumerate(lap_times)
+    ]
+
+
 def long_run(
     driver: str,
     tyre_set: str,
