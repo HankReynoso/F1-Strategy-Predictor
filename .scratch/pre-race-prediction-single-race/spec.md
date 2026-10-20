@@ -83,7 +83,7 @@ This is the thin end-to-end slice that later specs build on: the full Backtest a
 ## Implementation Decisions
 
 - **Overall approach.** This version is pure simulation. Probabilities come only from Simulated Race Time gaps. Circuit Tendency and the other tendencies from ADR-0001 come in later specs, so their effect on the Backtest score can be measured. The interface should leave room to multiply in a historical weight per Candidate Strategy later without changing callers.
-- **Project shape.** A Python package (Python 3.12, managed with uv, tested with pytest) holds all logic. Notebooks and a small command-line entry point only call into the package.
+- **Project shape.** A Python package (Python 3.12, managed with uv, tested with pytest) holds all logic. Notebooks and a small command-line entry point only call into the package: `uv run f1-strategy <season> "<event>"` and `notebooks/end_to_end_real_race.ipynb` both print the same per-driver table and race summary through `f1_strategy.report` (ticket 08).
 - **Race weekend description (the main input).** A plain, project-owned data shape describing one weekend:
   - the circuit and season
   - the race length in laps
@@ -106,7 +106,7 @@ This is the thin end-to-end slice that later specs build on: the full Backtest a
   - **Scorer.** Extracts actual Strategies from race Stints and reports Strategy Match (top-1 and top-3), Stop Window hits, the Neutralised Race flag, unscoreable drivers, and a race summary.
 - **Main public interface.** One call: race weekend description in, a Strategy Prediction per driver out. A second call takes those predictions plus the race's actual Stints and returns the comparison. All tunable settings (Plausible margin, Stop Window margin, probability sharpness, Long Run thresholds, fuel effect per lap) are passed in as one settings object with sensible defaults.
 - **Scope guard.** If the race weekend isn't a Dry Race (any race lap on Intermediate or Wet), the predictor refuses with a clear message rather than producing predictions.
-- **Default first race.** Develop against one recent, conventional (non-sprint) Dry Race from 2024, chosen by whoever implements this. Note which race was used.
+- **Default first race.** Develop against one recent, conventional (non-sprint) Dry Race from 2024, chosen by whoever implements this. Note which race was used. **Used: Singapore 2024** (ticket 08). Monza 2024 was preferred, but the model refuses it because no team ran the Hard enough in practice to estimate its Degradation (ticket 11); Singapore is the most recent green, conventional 2024 Dry Race the pipeline runs on.
 
 ## Testing Decisions
 

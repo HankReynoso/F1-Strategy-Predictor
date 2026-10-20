@@ -65,3 +65,5 @@
   - Expected values come from outside the loader: race-control messages for the SC laps, and the official distances for the race and sprint lengths.
 
 **Cache removed from main (2026-10-20).** The `fastf1-cache-2022` branch had been merged into main, putting 6.7 MB of binary FastF1 cache files (including `fastf1_http_cache.sqlite`) under version control despite `.cache/` being gitignored. They were untracked from main at the user's request; the `fastf1-cache-2022` branch is kept as the source of Monza 2022 data. `livetiming-mirror.fastf1.dev` was still proxy-denied at the time, so cloud sessions that need 2022 data should restore it with `git fetch origin fastf1-cache-2022 && git archive origin/fastf1-cache-2022 .cache/fastf1/2022 | tar -x` until the mirror is allowlisted.
+
+**From ticket 08 (2026-10-20).** `livetiming-mirror.fastf1.dev` is now reachable from cloud sessions. `livetiming.formula1.com` still returns 403 for 2022, but FastF1 falls back to the mirror on its own and loads 2022 races normally (checked with a cold cache on Singapore 2022: 7 × 403 from the primary, then 200s from the mirror). The `fastf1-cache-2022` sideload is no longer needed.

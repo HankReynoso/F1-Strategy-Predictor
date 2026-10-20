@@ -8,8 +8,16 @@ dependencies = [
     "fastf1>=3.8.3",
 ]
 
+[project.scripts]
+f1-strategy = "f1_strategy.cli:main"
+
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = [
+    "ipykernel>=7.4.0",
+    "nbclient>=0.11.0",
+    "nbformat>=5.11.1",
+    "pytest>=8",
+]
 
 [build-system]
 requires = ["hatchling"]
