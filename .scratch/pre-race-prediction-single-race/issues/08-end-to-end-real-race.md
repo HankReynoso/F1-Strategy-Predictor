@@ -176,3 +176,60 @@ Residual oddities still visible: on teams whose Degradation is still uniformly f
 Settings were not tuned to improve any of this. The defaults are reasoned in ticket 13's Implementation notes (shrinkage anchored on `min_long_run_length = 4`; minimum Stint length conservative lower bound at 5 laps) and were not revisited after this run.
 
 Takeaway for the baseline: ticket 13 lifts top-1 Strategy Match from 33% to 56% and top-3 from 67% to 78%, both without touching Stop Window accuracy (which still needs ticket 15). Combined with ticket 10's lapped-finisher fix, this is a materially stronger "before" number for Circuit Tendency than the original record, though ticket 14 (mirrored-tie enumeration order) will shift it again.
+
+## Rerun after ticket 14 (2026-10-20)
+
+Added separately from the original "before" record and the ticket-10
+and ticket-13 reruns above; none of those are edited. Ticket 14 (split
+credit for tied Candidate Strategies, deterministic within-tie
+ordering) was built on top of ticket 13. Rerunning
+`uv run f1-strategy 2024 "Singapore Grand Prix"` with its new defaults
+(every ticket-13 setting unchanged — no new tunable was added) gives:
+
+| | Before (original) | After ticket 10 | After ticket 13 | After ticket 14 |
+|---|---|---|---|---|
+| Scoreable drivers | 7 of 20 | 18 of 20 | 18 of 20 | 18 of 20 |
+| Top-1 Strategy Match | 2/7 (29%) | 6/18 (33%) | 10/18 (56%) | 6.5/18 (36%) |
+| Top-3 Strategy Match | 6/7 (86%) | 12/18 (67%) | 14/18 (78%) | 13.75/18 (76%) |
+| Stop Window hits | 1/7 (14%) | 3/20 (15%) | 3/20 (15%) | 3/20 (15%) |
+| Neutralised Race | no | no | no | no |
+
+**How many of the top-1 matches were ties, and what they now score.**
+Of the 10 top-1 matches ticket 13 counted, every single one was a
+mirrored M → H / H → M tie: all 13 M → H finishers (VER, PIA, RUS,
+LEC, SAI, ALO, HUL, PER, COL, OCO, STR, ZHO, BOT — plus STR's actual
+H → M, which is the same tied group viewed from the other side) sit
+inside the top-1 tied group of 2. Each now scores ½ top-1 and 1 top-3
+instead of 1 top-1 and 1 top-3. 13 × ½ = 6.5, which is the new top-1
+total. No scored driver had an untied top-1 match in the ticket-13
+rerun, so there was nothing in that number that ticket 14 left alone.
+
+Top-3 is almost unchanged because the mirrored pair fits inside top-3
+either way (the group covers ranks 1–2, which are both top-3 slots, so
+the credit is 2 / 2 = 1). The small drop (14 → 13.75) comes from NOR
+and HAM, whose actual Strategy sits in a tied group that straddles the
+top-3 cut-off: NOR's M → H tied group of 2 covers rank 3 only — top-3
+credit 1 / 2 = ½ — and HAM's S → H tied group of 4 covers rank 3 only
+— top-3 credit 1 / 4. The 14 − 13.75 = 0.25 gap is exactly the
+(½ + ¼) − 1 = −0.25 those two drivers contribute compared with being
+counted as full top-3 matches.
+
+Stop Window hits are unchanged at 3/20: this ticket does not touch
+window scoring (ticket 15 is the owner).
+
+The ticket-13 "softer-first mirror decides it" artefact is gone. The
+within-tie display order in the per-driver table also changed (now
+`H → M` before `M → H` instead of the reverse): a stated,
+deterministic order on `Compound.value`, chosen so changing the output
+of `legal_strategies()` can never silently re-rank tied candidates. The
+scoring is independent of this display order; the display order is
+documented in ticket 14's Implementation notes.
+
+Takeaway for the baseline: ticket 14 drops top-1 Strategy Match from
+56% to 36% and top-3 from 78% to 76%, both without touching Stop
+Window accuracy. Combined with tickets 10 and 13, this is the
+honest "before" number for Circuit Tendency: 6.5/18 top-1 and
+13.75/18 top-3. The gain Circuit Tendency wins back from breaking
+mirrored ties with real history (ticket 09) is now measurable
+directly against these numbers, not against the enumeration-order
+artefact.

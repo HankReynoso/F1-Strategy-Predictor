@@ -4,13 +4,13 @@
 
 **Blocked by:** None
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Category:** bug
 
-- [ ] Strategy Match handles equal-probability Candidate Strategies in a stated, order-independent way (for example, a tie counts as a 1/k match, or the summary reports top-1 with ties separately)
-- [ ] Reordering how Strategies are enumerated doesn't change any score
-- [ ] Tests go through `predict()` and `compare()`
+- [x] Strategy Match handles equal-probability Candidate Strategies in a stated, order-independent way (for example, a tie counts as a 1/k match, or the summary reports top-1 with ties separately)
+- [x] Reordering how Strategies are enumerated doesn't change any score
+- [x] Tests go through `predict()` and `compare()`
 
 ## Comments
 
@@ -38,14 +38,143 @@ Strategy Match treats Candidate Strategies with equal probability as one tied gr
 - The report: shows fractional credit readably
 
 **Acceptance criteria:**
-- [ ] An actual Strategy tied 2 ways for top pick scores ½ top-1 and 1 top-3
-- [ ] An actual Strategy in a 4-way tie covering ranks 2–5 scores 0 top-1 and ½ top-3
-- [ ] Untied results score exactly as before
-- [ ] Shuffling the order of Candidate Strategies in a hand-built prediction never changes any score
-- [ ] The summary totals are sums of credits and the report displays them
-- [ ] Re-running Singapore 2024 shows the corrected top-1, noted in ticket 08's Results, separate from the original "before" record
-- [ ] Tests go through `predict()` and `compare()`
+- [x] An actual Strategy tied 2 ways for top pick scores ½ top-1 and 1 top-3
+- [x] An actual Strategy in a 4-way tie covering ranks 2–5 scores 0 top-1 and ½ top-3
+- [x] Untied results score exactly as before
+- [x] Shuffling the order of Candidate Strategies in a hand-built prediction never changes any score
+- [x] The summary totals are sums of credits and the report displays them
+- [x] Re-running Singapore 2024 shows the corrected top-1, noted in ticket 08's Results, separate from the original "before" record
+- [x] Tests go through `predict()` and `compare()`
 
 **Out of scope:**
 - Breaking mirrored ties in the model (ticket 09, via Circuit Tendency)
 - Stop Window scoring
+
+## Implementation notes
+
+**What was built (2026-10-20).**
+
+- `scorer.DriverScore` now carries `top_1_credit: float` and
+  `top_3_credit: float` in place of the old booleans. `RaceSummary` carries
+  `top_1_credit` and `top_3_credit` as float sums. Nothing else about the
+  scorer or summary moved.
+- `scorer._tied_group_credit` finds the tied group containing the matched
+  Candidate Strategy (every candidate sharing its probability), works out
+  the group's rank range in a probability-sorted list, and returns
+  `(top-1 slots covered, top-3 slots covered) / group size`. Untied
+  groups collapse to the familiar 0/1 outcome.
+- `predictor.predict()` sorts simulated Candidate Strategies by
+  `(race_time, tuple(compound.value for compound in strategy))`, so two
+  Strategies with the same Simulated Race Time land in a stated,
+  deterministic order and re-ordering the output of `legal_strategies()`
+  cannot silently re-rank tied candidates.
+- `report._credit` and `_credit_total` display credits as reduced
+  fractions (`1`, `0`, `1/2`, `1/4`, …) in the per-driver table and sums
+  as integers when whole, else to one or two decimals in the race
+  summary (`Top-1 Strategy Match: 6.5/18 (36%)`).
+
+**Decision: tie detection uses exact float equality on `probability`.**
+Mirrored Candidate Strategies — M → H / H → M, S → M / M → S, S → H /
+H → S — have identical Simulated Race Times by construction. The
+simulator's `_allocate()` sees only the sequence of degradation rates,
+not Compound order, so a mirrored pair's Stint allocation, tyre cost,
+pit-loss contribution and base-lap-time contribution are the same, and
+their race times are byte-identical floats. `predict()` turns each
+race-time gap into a weight through `exp(-gap / probability_scale_s)`
+and divides by a common sum, so two inputs that are identical in all bits
+produce two normalised probabilities that are identical in all bits.
+Exact equality is enough and no tolerance is needed.
+
+Alternatives rejected: (a) comparing on `simulated_race_time` with an
+absolute tolerance — adds a free parameter with no observable effect in
+the cases that matter, and risks grouping two Strategies that are not
+really tied; (b) comparing on `race_time` with exact equality — works for
+mirrors but misses tie-structure after any later probability transform;
+`probability` is the thing the scorer is actually ranking by, so testing
+it is directly meaningful. Coincidental float ties on non-mirrored
+Strategies are rare at normal settings and would score the same under
+any tolerance below 1e-9 anyway.
+
+**Decision: deterministic within-tie display order is alphabetical by
+Compound value tuple.** The ticket allows any stated, deterministic rule.
+A tuple of `Compound.value` strings (`"S"`, `"M"`, `"H"`) sorts to
+`("H",…) < ("M",…) < ("S",…)` and leaves the mirror H → M before M → H.
+This matches the Compound ordering `Compound` already carries in its
+enum, needs no extra data on each Strategy, and makes the sort key
+small and obvious. Rejected: softer-first order ("S" < "M" < "H")
+because it would duplicate what Circuit Tendency (ticket 09) is meant
+to decide, by assuming a prior on which mirror teams prefer; stable
+input-order (status quo) because that is precisely the behaviour the
+ticket is removing.
+
+**Decision: rename fields rather than keep the old boolean names.** The
+old `top_1_match: bool` reads as "did we hit?". The new `top_1_credit`
+reads as "how much of a hit did we get?". The scoreboard semantics
+change — a fractional value where a boolean used to live — so renaming
+makes the API change visible rather than silent. The code and tests
+touching those fields are self-contained and the migration cost is
+small.
+
+**Deviations from the ticket or spec.** None in behaviour. The report
+format for the per-driver line now shows a fraction (`top-1 1/2`)
+instead of `top-1 yes` / `top-1 no`; the ticket's example output (`e.g.
+"top-1: ½"`) covers this. The race-summary numerator can be fractional
+(`6.5/18`), which the ticket's "sums of credits" implies but does not
+specify.
+
+**CONTEXT.md / ADRs.** No new domain terms. Strategy Match, Candidate
+Strategy, mirrored Strategies and Simulated Race Time all already carry
+the vocabulary. No ADR: the choice is cheap to reverse and does not
+cross the "hard to reverse" line in `docs/agents/domain.md`.
+
+**Spec changes.** None. The spec's "Comparing with what happened"
+section describes Strategy Match without pinning a specific numeric
+form, and the implementation decisions bullet on comparison does not
+constrain whether the per-driver outcome is a bool or a fractional
+credit.
+
+**Singapore 2024 re-run.** Logged in ticket 08's Results under a
+separate `## Rerun after ticket 14 (2026-10-20)` heading, after the
+existing rerun notes. The headline against ticket 13's rerun on
+main: Top-1 Strategy Match drops from 10/18 (56%) to 6.5/18 (36%)
+once mirrored ties are credited fairly, Top-3 drops slightly from
+14/18 (78%) to 13.75/18 (76%), and Stop Window hits are unchanged
+at 3/20.
+
+**Known limitations and follow-ups.**
+
+- The within-tie display order sorts `H → M` ahead of `M → S` ahead of
+  `S → H`, which is deterministic but not the order a commentator would
+  pick (they would show the softer-first mirror). Once ticket 09
+  (Circuit Tendency) breaks the tie with real history, the sort key can
+  switch to probability only and the question goes away. Until then,
+  this is a cosmetic quirk, not a scoring issue.
+- A `Fraction` field for `top_k_credit` would avoid the `0.5` floating
+  display and let the summary totals round-trip exactly, but `Fraction`
+  mixes awkwardly with `sum()` of ints, and the per-driver values are
+  all of the form k / small-n where float is exact up to k ≤ 100 or so.
+  The float field is simpler and the report has a Fraction-based
+  formatter already.
+- The Agent Brief line "likewise for top-3" is implemented as the share
+  of top-3 slots the group covers, divided by the group size. The two
+  example acceptance criteria confirm this reading.
+
+**Review feedback to the user.**
+
+- The Singapore "before" number for Circuit Tendency now sits at 6.5/18
+  (36%) top-1 and 13.75/18 (76%) top-3. The 36% headline is lower than
+  the ticket 13 rerun's 56% because the lift from 33% → 56% in that
+  rerun was partly ticket 14's "softer-first mirror is counted twice"
+  artefact. The new number is the one Circuit Tendency should be
+  compared against: a top-1 lift from Circuit Tendency now shows the
+  gain from knowing M-first is usually correct at Singapore, not the
+  artefact of the softer-first mirror being enumerated first.
+- Ticket 09 (break mirrored ties with Circuit Tendency) now has a clean
+  baseline to measure against. Its acceptance criterion "On a hand-built
+  weekend with history where drivers mostly started on the softer
+  Compound, the softer-first mirror gets the higher probability" and
+  the Backtest line "reports top-1 Strategy Match before and after
+  Circuit Tendency" can both land on top of ticket 14's numbers.
+- Stop Window hits are unchanged by this ticket (as expected: windows
+  are per Strategy, not per probability). Ticket 15 is still the owner
+  of the Stop-Window-is-early problem.

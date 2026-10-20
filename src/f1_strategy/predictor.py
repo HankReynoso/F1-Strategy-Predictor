@@ -153,7 +153,13 @@ def _predict_driver(
         )
         simulated.append((strategy, race))
 
-    simulated.sort(key=lambda pair: pair[1].race_time)
+    # Sort by simulated race time, with a deterministic tie-breaker on the
+    # Compound sequence (ticket 14): two Candidate Strategies with the same
+    # Simulated Race Time — mirrored Strategies like M → H and H → M always
+    # tie by construction — otherwise land in whatever order
+    # `legal_strategies()` produced them in, so re-ordering the enumeration
+    # would silently re-rank tied candidates.
+    simulated.sort(key=lambda pair: _candidate_sort_key(pair[0], pair[1].race_time))
     fastest = simulated[0][1].race_time
     # Only Plausible Candidate Strategies remain.
     simulated = [
@@ -185,6 +191,12 @@ def _predict_driver(
         for (strategy, race), weight in zip(simulated, weights)
     )
     return StrategyPrediction(driver, candidates, estimates, dict(remaining), rule)
+
+
+def _candidate_sort_key(
+    strategy: Strategy, race_time: float
+) -> tuple[float, tuple[str, ...]]:
+    return race_time, tuple(c.value for c in strategy.compounds)
 
 
 def _require_dry_race(weekend: RaceWeekend) -> None:

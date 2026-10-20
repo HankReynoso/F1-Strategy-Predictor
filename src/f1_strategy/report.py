@@ -6,6 +6,7 @@ actual Strategy and how it scored. `format_summary` prints the race summary.
 """
 
 from dataclasses import fields
+from fractions import Fraction
 
 from .predictor import CandidateStrategy, RemainingSetsRule, StrategyPrediction
 from .scorer import DriverScore, RaceComparison
@@ -65,8 +66,8 @@ def format_summary(comparison: RaceComparison) -> str:
     return "\n".join(
         [
             f"Scoreable drivers: {scoreable} of {len(comparison.scores)}",
-            f"Top-1 Strategy Match: {_count(summary.top_1_matches, scoreable)}",
-            f"Top-3 Strategy Match: {_count(summary.top_3_matches, scoreable)}",
+            f"Top-1 Strategy Match: {_credit_count(summary.top_1_credit, scoreable)}",
+            f"Top-3 Strategy Match: {_credit_count(summary.top_3_credit, scoreable)}",
             "Stop Window hits: "
             f"{_count(summary.stop_window_hits, actual_stops, 'actual stops')}",
             f"Neutralised Race: {'yes' if comparison.neutralised_race else 'no'}",
@@ -92,8 +93,8 @@ def _score_columns(score: DriverScore) -> str:
     actual = f"{strategy_label(score.actual.compounds)} ({laps})"
     hits = f"{sum(score.stop_window_hits)}/{len(score.stop_window_hits)}"
     return (
-        f"{actual:<36}top-1 {_yes_no(score.top_1_match)} · "
-        f"top-3 {_yes_no(score.top_3_match)} · Stop Window hits {hits}"
+        f"{actual:<36}top-1 {_credit(score.top_1_credit)} · "
+        f"top-3 {_credit(score.top_3_credit)} · Stop Window hits {hits}"
     )
 
 
@@ -102,5 +103,24 @@ def _count(part: int, whole: int, unit: str = "") -> str:
     return f"{of} ({part / whole:.0%})" if whole else of
 
 
-def _yes_no(flag: bool) -> str:
-    return "yes" if flag else "no"
+def _credit_count(part: float, whole: int, unit: str = "") -> str:
+    numerator = _credit_total(part)
+    of = f"{numerator}/{whole}" + (f" {unit}" if unit else "")
+    return f"{of} ({part / whole:.0%})" if whole else of
+
+
+def _credit(credit: float) -> str:
+    """Fraction string for a per-driver credit, e.g. "1", "0", "1/2"."""
+    fraction = Fraction(credit).limit_denominator(100)
+    if fraction.denominator == 1:
+        return str(fraction.numerator)
+    return f"{fraction.numerator}/{fraction.denominator}"
+
+
+def _credit_total(total: float) -> str:
+    """A sum of credits for the race summary. Shown as an integer when whole,
+    else to one decimal (e.g. 2.5)."""
+    rounded = round(total, 6)
+    if rounded == int(rounded):
+        return str(int(rounded))
+    return f"{rounded:g}"

@@ -58,26 +58,36 @@ def test_actual_strategy_matching_the_top_candidate_is_a_top_1_match():
 
     score = compare(predictions, race).scores["VER"]
 
-    assert score.top_1_match is True
-    assert score.top_3_match is True
+    # The top pick is M → H (or its mirror), tied with H → M at rank 2:
+    # ticket 14 splits a 2-way top tie into ½ top-1 and 1 top-3.
+    assert score.top_1_credit == 0.5
+    assert score.top_3_credit == 1.0
 
 
 def test_actual_strategy_in_top_3_but_not_top_1_is_a_top_3_match_only():
     base = weekend(standard_practice(), TEAMS)
     predictions = predict(base)
-    third_strategy = predictions["VER"].candidates[2].strategy
+    # Pick the first Candidate Strategy sitting outside the top-ranked tied
+    # group: its probability is strictly less than the top pick's, so it is
+    # not a top-1 match. With the mirrored-tie split, three ranks sit inside
+    # top-3, so a candidate at rank 3 or lower in its own tied group still
+    # earns some top-3 credit (and we only need some here).
+    top_prob = predictions["VER"].candidates[0].probability
+    deeper = next(
+        c for c in predictions["VER"].candidates if c.probability != top_prob
+    )
     stints = _stints_for(
         "VER",
-        third_strategy.compounds,
+        deeper.strategy.compounds,
         race_laps=57,
-        stop_laps=_evenly_spaced(57, third_strategy.stops),
+        stop_laps=_evenly_spaced(57, deeper.strategy.stops),
     )
     race = with_race(base, stints=stints)
 
     score = compare(predictions, race).scores["VER"]
 
-    assert score.top_1_match is False
-    assert score.top_3_match is True
+    assert score.top_1_credit == 0.0
+    assert score.top_3_credit > 0.0
 
 
 def test_actual_strategy_absent_from_the_prediction_counts_as_no_match():
@@ -91,8 +101,8 @@ def test_actual_strategy_absent_from_the_prediction_counts_as_no_match():
 
     score = compare(predictions, race).scores["VER"]
 
-    assert score.top_1_match is False
-    assert score.top_3_match is False
+    assert score.top_1_credit == 0.0
+    assert score.top_3_credit == 0.0
 
 
 def test_a_stop_two_laps_outside_the_window_still_counts_as_a_strategy_match():
@@ -109,7 +119,7 @@ def test_a_stop_two_laps_outside_the_window_still_counts_as_a_strategy_match():
 
     assert score.actual.strategy == Strategy((M, H))
     # Strategy Match holds on stop count and Compound sequence alone.
-    assert score.top_1_match is True or score.top_3_match is True
+    assert score.top_1_credit > 0 or score.top_3_credit > 0
     # Window hit scored separately: lap 7 is outside the window.
     (hit,) = score.stop_window_hits
     assert hit is False
@@ -213,8 +223,8 @@ def test_retired_drivers_are_unscoreable():
 
     assert score.unscoreable is True
     assert score.actual is None
-    assert score.top_1_match is False
-    assert score.top_3_match is False
+    assert score.top_1_credit == 0.0
+    assert score.top_3_credit == 0.0
     assert score.stop_window_hits == ()
 
 
@@ -234,7 +244,8 @@ def test_a_lapped_finisher_with_at_least_one_stop_is_scoreable():
     assert score.unscoreable is False
     assert score.actual is not None
     assert score.actual.strategy == top.strategy
-    assert score.top_1_match is True
+    # The top pick is M → H tied with H → M (ticket 14): ½ top-1 credit.
+    assert score.top_1_credit == 0.5
 
 
 def test_a_classified_driver_who_retired_near_the_end_is_unscoreable():
@@ -312,8 +323,10 @@ def test_race_summary_counts_matches_and_window_hits_over_scoreable_drivers():
     summary = compare(predictions, race).summary
 
     assert summary.scoreable_drivers == 1
-    assert summary.top_1_matches == 1
-    assert summary.top_3_matches == 1
+    # VER's top pick is M → H (or its mirror), tied with H → M, so the actual
+    # Strategy scores half top-1 and full top-3 (ticket 14).
+    assert summary.top_1_credit == 0.5
+    assert summary.top_3_credit == 1.0
     assert summary.stop_window_hits == top.stops
 
 

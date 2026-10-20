@@ -94,8 +94,10 @@ def test_table_shows_the_actual_strategy_with_stop_laps_and_match_results():
 
     ver_line = driver_block(table, "VER")[0]
     assert f"{strategy_label(top.strategy.compounds)} (lap {window.best_lap})" in ver_line
-    assert "top-1 yes" in ver_line
-    assert "top-3 yes" in ver_line
+    # Default standard_practice makes M → H the top pick, tied with H → M:
+    # ticket 14 splits the top-1 credit as 1/2 and keeps top-3 at 1.
+    assert "top-1 1/2" in ver_line
+    assert "top-3 1" in ver_line
     assert "Stop Window hits 1/1" in ver_line
 
 
@@ -110,7 +112,7 @@ def test_table_marks_a_miss_and_a_stop_outside_the_window():
     table = format_table(predictions, compare(predictions, race))
 
     lec_line = driver_block(table, "LEC")[0]
-    assert "top-1 no" in lec_line
+    assert "top-1 0" in lec_line
     assert "Stop Window hits 0/1" in lec_line
 
 
@@ -140,7 +142,9 @@ def test_summary_reports_top_1_top_3_and_stop_window_hits_out_of_scoreable_drive
     summary = format_summary(comparison)
 
     assert "Scoreable drivers: 2 of 3" in summary
-    assert "Top-1 Strategy Match: 1/2 (50%)" in summary
+    # VER's top pick M → H is tied with H → M (ticket 14): 0.5 top-1 credit;
+    # LEC's miss adds 0. Total 0.5 of 2 scoreable = 25%.
+    assert "Top-1 Strategy Match: 0.5/2 (25%)" in summary
     assert "Stop Window hits: 1/2 actual stops (50%)" in summary
     assert "Neutralised Race: no" in summary
 
