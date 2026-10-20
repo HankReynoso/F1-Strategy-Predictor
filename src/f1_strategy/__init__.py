@@ -1,3 +1,4 @@
+from .degradation import DegradationEstimate, DegradationSource
 from .predictor import (
     CandidateStrategy,
     NotDryRaceError,
@@ -29,6 +30,8 @@ __all__ = [
     "ActualStrategy",
     "CandidateStrategy",
     "Compound",
+    "DegradationEstimate",
+    "DegradationSource",
     "DriverScore",
     "Lap",
     "NeutralisationPeriod",

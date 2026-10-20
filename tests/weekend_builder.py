@@ -33,6 +33,9 @@ def long_run(
     ]
 
 
+DEFAULT_FUEL_BURN = 0.03  # matches Settings.fuel_effect_s_per_lap default
+
+
 def degrading_run(
     driver: str,
     tyre_set: str,
@@ -41,13 +44,18 @@ def degrading_run(
     laps: int = 8,
     base: float = 90.0,
     first_lap: int = 1,
+    fuel_burn: float = DEFAULT_FUEL_BURN,
 ) -> list[Lap]:
-    """A Long Run losing exactly `degradation` seconds per lap."""
+    """A Long Run whose fitted Degradation (after fuel correction with the same
+    `fuel_burn`) is exactly `degradation` seconds per lap. Raw lap times fall by
+    `fuel_burn` per lap and rise by `degradation` per lap of tyre age, so the
+    observed slope is `degradation - fuel_burn`.
+    """
     return long_run(
         driver,
         tyre_set,
         compound,
-        [base + degradation * i for i in range(laps)],
+        [base + (degradation - fuel_burn) * i for i in range(laps)],
         first_lap,
     )
 

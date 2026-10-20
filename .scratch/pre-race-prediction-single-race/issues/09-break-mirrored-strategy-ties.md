@@ -18,3 +18,5 @@ Options to decide between (needs a modelling choice, possibly via `/domain-model
 ## Comments
 
 **From ticket 05 (2026-10-19).** Raised in ticket 01, deferred in 05 because it needs a modelling choice outside Plausible pruning and Stop Windows.
+
+**From ticket 02 (2026-10-20).** Fuel correction (ticket 02) does not break mirrored ties by itself: the simulator's cost is a sum over Stints of `d_c * L * (L - 1) / 2 + base * L`, and total fuel burn is `fuel_effect * race_laps * (race_laps - 1) / 2` regardless of Compound order. The same holds for a per-Compound pace intercept while the simulator stays order-agnostic. Breaking mirrors needs a term that depends on absolute race-lap position of each Stint, e.g. degradation scaling with fuel load (heavy fuel wears tyres more early), or a starting-Compound rule. Still needs the modelling choice before implementation.

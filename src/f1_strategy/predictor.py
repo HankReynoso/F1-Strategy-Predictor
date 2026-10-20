@@ -4,7 +4,7 @@ import math
 from dataclasses import dataclass
 from itertools import product
 
-from .degradation import base_lap_time, field_degradation
+from .degradation import DegradationEstimate, base_lap_time, team_degradation
 from .settings import Settings
 from .simulator import simulate, stop_windows
 from .weekend import DRY_COMPOUNDS, Compound, RaceWeekend
@@ -44,6 +44,7 @@ class CandidateStrategy:
 class StrategyPrediction:
     driver: str
     candidates: tuple[CandidateStrategy, ...]
+    team_degradation: dict[Compound, DegradationEstimate]
 
 
 def legal_strategies() -> list[Strategy]:
@@ -63,18 +64,31 @@ def predict(
     _require_dry_race(weekend)
     # Everything below reads only pre-race information.
     pre_race = weekend.pre_race
-    degradation = field_degradation(pre_race)
+    team_rates = team_degradation(pre_race, settings.fuel_effect_s_per_lap)
     base = base_lap_time(pre_race)
 
+    predictions: dict[str, StrategyPrediction] = {}
+    for driver, team in pre_race.teams.items():
+        estimates = team_rates[team]
+        rates = {c: e.rate for c, e in estimates.items()}
+        predictions[driver] = _predict_driver(
+            driver, estimates, rates, pre_race.race_laps, pre_race.pit_loss, base, settings
+        )
+    return predictions
+
+
+def _predict_driver(
+    driver: str,
+    estimates: dict[Compound, DegradationEstimate],
+    rates: dict[Compound, float],
+    race_laps: int,
+    pit_loss: float,
+    base: float,
+    settings: Settings,
+) -> StrategyPrediction:
     simulated = []
     for strategy in legal_strategies():
-        race = simulate(
-            strategy.compounds,
-            degradation,
-            pre_race.race_laps,
-            pre_race.pit_loss,
-            base,
-        )
+        race = simulate(strategy.compounds, rates, race_laps, pit_loss, base)
         simulated.append((strategy, race))
 
     simulated.sort(key=lambda pair: pair[1].race_time)
@@ -99,15 +113,15 @@ def predict(
                 PlannedStop(w.first_lap, w.best_lap, w.last_lap)
                 for w in stop_windows(
                     strategy.compounds,
-                    degradation,
-                    pre_race.race_laps,
+                    rates,
+                    race_laps,
                     settings.stop_window_margin_s,
                 )
             ),
         )
         for (strategy, race), weight in zip(simulated, weights)
     )
-    return {driver: StrategyPrediction(driver, candidates) for driver in pre_race.teams}
+    return StrategyPrediction(driver, candidates, estimates)
 
 
 def _require_dry_race(weekend: RaceWeekend) -> None:

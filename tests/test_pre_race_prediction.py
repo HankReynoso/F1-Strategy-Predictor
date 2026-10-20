@@ -2,10 +2,11 @@ import math
 from itertools import pairwise
 
 import pytest
-from weekend_builder import TEAMS, standard_practice, weekend
+from weekend_builder import TEAMS, degrading_run, long_run, standard_practice, weekend
 
 from f1_strategy import (
     Compound,
+    DegradationSource,
     NeutralisationPeriod,
     NotDryRaceError,
     RaceOutcome,
@@ -202,3 +203,141 @@ def test_a_weekend_with_intermediate_or_wet_race_laps_is_refused(wet_compound):
 
     with pytest.raises(NotDryRaceError, match="not a Dry Race"):
         predict(weekend(standard_practice(), TEAMS, race_stints=stints))
+
+
+# --- Ticket 02: per-team Degradation with fuel correction ---------------------
+
+TWO_TEAMS = {"VER": "Red Bull Racing", "LEC": "Ferrari"}
+
+
+def test_two_teams_with_different_long_runs_get_different_favourite_strategies():
+    # Red Bull: the standard_practice Degradation (gentle); default settings put
+    # the 1-stop M->H as the favourite. Ferrari: three times the Degradation on
+    # every Compound; the earlier test_higher_degradation_shifts_the_favourite
+    # case already proved that pushes the favourite to a 2-stop.
+    laps = [
+        *degrading_run("VER", "VER-S1", S, 0.12),
+        *degrading_run("VER", "VER-M1", M, 0.07, first_lap=20),
+        *degrading_run("VER", "VER-H1", H, 0.04, first_lap=40),
+        *degrading_run("LEC", "LEC-S1", S, 0.36),
+        *degrading_run("LEC", "LEC-M1", M, 0.21, first_lap=20),
+        *degrading_run("LEC", "LEC-H1", H, 0.12, first_lap=40),
+    ]
+    predictions = predict(weekend(laps, TWO_TEAMS))
+
+    assert predictions["VER"].candidates[0].strategy.stops == 1
+    assert predictions["LEC"].candidates[0].strategy.stops == 2
+
+
+def test_a_teams_degradation_source_is_long_runs_when_it_has_long_runs_on_the_compound():
+    prediction = predict(weekend(standard_practice(), TEAMS))["VER"]
+
+    assert prediction.team_degradation[S].source == DegradationSource.LONG_RUNS
+    assert prediction.team_degradation[M].source == DegradationSource.LONG_RUNS
+    assert prediction.team_degradation[H].source == DegradationSource.LONG_RUNS
+
+
+def test_a_team_with_no_long_run_on_a_compound_uses_the_field_average_from_other_teams():
+    # Red Bull did no Softs this weekend; Ferrari did. Red Bull's Soft estimate
+    # should come from Ferrari (the only team on that Compound), tagged as the
+    # field average, and should match Ferrari's rate.
+    laps = [
+        *degrading_run("VER", "VER-M1", M, 0.07),
+        *degrading_run("VER", "VER-H1", H, 0.04, first_lap=20),
+        *degrading_run("LEC", "LEC-S1", S, 0.12),
+        *degrading_run("LEC", "LEC-M1", M, 0.07, first_lap=20),
+        *degrading_run("LEC", "LEC-H1", H, 0.04, first_lap=40),
+    ]
+    predictions = predict(weekend(laps, TWO_TEAMS))
+
+    assert predictions["VER"].team_degradation[S].source == DegradationSource.FIELD_AVERAGE
+    assert predictions["VER"].team_degradation[M].source == DegradationSource.LONG_RUNS
+    assert predictions["VER"].team_degradation[H].source == DegradationSource.LONG_RUNS
+    assert predictions["LEC"].team_degradation[S].source == DegradationSource.LONG_RUNS
+    assert predictions["VER"].team_degradation[S].rate == pytest.approx(
+        predictions["LEC"].team_degradation[S].rate
+    )
+
+
+def test_the_field_average_is_the_mean_of_fitted_rates_across_teams_on_that_compound():
+    # Two teams have Softs with meaningfully different fits (0.10 and 0.30);
+    # a third team (Mercedes/HAM) has no Softs and should get the mean, 0.20.
+    teams = {
+        "VER": "Red Bull Racing",
+        "LEC": "Ferrari",
+        "HAM": "Mercedes",
+    }
+    laps = [
+        *degrading_run("VER", "VER-S1", S, 0.10),
+        *degrading_run("VER", "VER-M1", M, 0.07, first_lap=20),
+        *degrading_run("VER", "VER-H1", H, 0.04, first_lap=40),
+        *degrading_run("LEC", "LEC-S1", S, 0.30),
+        *degrading_run("LEC", "LEC-M1", M, 0.07, first_lap=20),
+        *degrading_run("LEC", "LEC-H1", H, 0.04, first_lap=40),
+        # Mercedes: no Softs. Mediums and Hards present so the fallback only
+        # applies to Softs.
+        *degrading_run("HAM", "HAM-M1", M, 0.07),
+        *degrading_run("HAM", "HAM-H1", H, 0.04, first_lap=20),
+    ]
+    predictions = predict(weekend(laps, teams))
+
+    ham_soft = predictions["HAM"].team_degradation[S]
+    assert ham_soft.source == DegradationSource.FIELD_AVERAGE
+    assert ham_soft.rate == pytest.approx(0.20)
+
+
+def test_fuel_correction_lifts_fitted_degradation_by_the_fuel_effect_setting():
+    # Flat raw lap times across tyre age mean no visible slope: without fuel
+    # correction a 1-stop costs only Pit Loss. With a 0.1 s/lap fuel effect the
+    # fitted Degradation is 0.1 everywhere, so a 1-stop M->H over 57 laps now
+    # pays an extra 0.05 * (n*(n-1) + (57-n)*(56-n)) ~ 80 s on top.
+    flat_laps = [
+        *long_run("VER", "VER-S1", S, [90.0] * 10),
+        *long_run("VER", "VER-M1", M, [90.0] * 10, first_lap=20),
+        *long_run("VER", "VER-H1", H, [90.0] * 10, first_lap=40),
+        *long_run("LEC", "LEC-S1", S, [90.0] * 10),
+        *long_run("LEC", "LEC-M1", M, [90.0] * 10, first_lap=20),
+        *long_run("LEC", "LEC-H1", H, [90.0] * 10, first_lap=40),
+    ]
+    teams = {"VER": "Red Bull Racing", "LEC": "Ferrari"}
+    no_fuel = predict(
+        weekend(flat_laps, teams), Settings(fuel_effect_s_per_lap=0.0)
+    )["VER"]
+    with_fuel = predict(
+        weekend(flat_laps, teams), Settings(fuel_effect_s_per_lap=0.1)
+    )["VER"]
+
+    best_no_fuel = no_fuel.candidates[0]
+    best_with_fuel = with_fuel.candidates[0]
+    assert best_with_fuel.simulated_race_time - best_no_fuel.simulated_race_time > 50.0
+
+
+def test_a_long_run_that_only_improves_from_fuel_burn_fits_to_zero_degradation():
+    # Raw times fall by exactly the fuel effect per lap: pure fuel burn, no
+    # tyre wear. With matching fuel correction the fitted Degradation is 0.
+    # Observable through the main seam: Simulated Race Time equals base time
+    # plus Pit Loss alone, because no Stint costs anything.
+    fuel_effect = 0.05
+    laps = [
+        *long_run("VER", "VER-S1", S, [90.0 - fuel_effect * i for i in range(10)]),
+        *long_run(
+            "VER", "VER-M1", M, [90.0 - fuel_effect * i for i in range(10)],
+            first_lap=20,
+        ),
+        *long_run(
+            "VER", "VER-H1", H, [90.0 - fuel_effect * i for i in range(10)],
+            first_lap=40,
+        ),
+    ]
+    teams = {"VER": "Red Bull Racing"}
+    prediction = predict(
+        weekend(laps, teams, race_laps=57, pit_loss=22.0),
+        Settings(fuel_effect_s_per_lap=fuel_effect),
+    )["VER"]
+
+    # The base lap time is min raw time = 90 - 9*0.05 = 89.55 s on lap 10.
+    base = 90.0 - fuel_effect * 9
+    best_one_stop = next(c for c in prediction.candidates if c.strategy.stops == 1)
+    assert best_one_stop.simulated_race_time == pytest.approx(57 * base + 22.0)
+    for compound, estimate in prediction.team_degradation.items():
+        assert estimate.rate == pytest.approx(0.0), compound

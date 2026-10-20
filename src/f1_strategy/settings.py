@@ -17,3 +17,7 @@ class Settings:
     # Stop Window: every stop lap whose Simulated Race Time is within this many
     # seconds of the best stop lap is inside the window.
     stop_window_margin_s: float = 1.0
+
+    # Fuel effect: seconds per lap of lap time that comes from fuel burn alone,
+    # added back to the Long Run slope so Degradation reflects pure tyre wear.
+    fuel_effect_s_per_lap: float = 0.03
