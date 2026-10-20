@@ -26,6 +26,10 @@ _Avoid_: pit window (fine in speech), stop lap
 A departure from a driver's planned Strategy in response to race events, such as pitting under a Safety Car. A Deviation is not itself part of a Strategy.
 _Avoid_: reactive strategy, strategy change
 
+**Remaining Strategy**:
+The Strategy for the rest of a race from a driver's current lap, Compound fitted and Remaining Sets. Live Predictions predict Remaining Strategies after a Deviation.
+_Avoid_: new strategy, revised plan
+
 **Dry Race**:
 A race run entirely on dry Compounds (Soft, Medium, Hard). In a Dry Race a driver must use at least two different dry Compounds. Only Dry Races are in scope.
 _Avoid_: normal race
@@ -47,6 +51,14 @@ _Avoid_: deg (fine in speech), tyre wear, drop-off
 **Long Run**:
 A practice Stint run at race pace on a heavy fuel load, used to measure Degradation. On sprint weekends, sprint race Stints also count as Long Runs.
 _Avoid_: race sim, race run
+
+**Pit Loss**:
+The race time a driver loses by making one pit stop at a given circuit, compared with staying out.
+_Avoid_: pit delta (fine in speech), stop time
+
+**Simulated Race Time**:
+The estimated total time for a driver to complete a race on a given Candidate Strategy.
+_Avoid_: predicted time, race sim
 
 ### Predictions
 
