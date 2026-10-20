@@ -129,3 +129,23 @@ Recent conventional 2024 races screened with default settings:
 - The "before" number is weak evidence: 7 scoreable drivers, every top-1 match a coin-flip tie, and the one Stop Window hit degenerate. Tickets 10, 13 and 14 should land before it is used as the baseline for Circuit Tendency, otherwise the comparison measures scoring artefacts as much as the model.
 - Ticket 11 matters for the Backtest: 3 of the 7 recent conventional 2024 races screened can't be predicted at all.
 - The FastF1 mirror is now reachable. The `fastf1-cache-2022` branch sideload from ticket 07 is no longer needed, and the Backtest can draw on 2022 directly.
+
+## Rerun after ticket 10 (2026-10-20)
+
+Added separately from the original "before" record above; the "before" table and numbers are unchanged.
+
+With lapped finishers now scored (ticket 10), rerunning `uv run f1-strategy 2024 "Singapore Grand Prix"` on the same settings and the same loader cache gives:
+
+| | Before (above) | After ticket 10 |
+|---|---|---|
+| Scoreable drivers | 7 of 20 | 18 of 20 |
+| Top-1 Strategy Match | 2/7 (29%) | 6/18 (33%) |
+| Top-3 Strategy Match | 6/7 (86%) | 12/18 (67%) |
+| Stop Window hits | 1/7 actual stops (14%) | 3/20 actual stops (15%) |
+| Neutralised Race | no | no |
+
+Who moved from unscoreable to scoreable: the 11 lapped classified finishers (ALO, HUL, PER, COL, TSU, OCO, STR, ZHO, BOT, GAS, RIC). MAG stays unscoreable per ticket 10's triage decision (retired lap 57 of 62, classified 19th but did not take the chequered flag); ALB stays unscoreable (retired lap 15). The 18 scoreable total is the 19-driver official classification minus MAG.
+
+Both tops-1 matches held, and six more showed up among the lapped finishers (every M → H mirror), which is why top-1 only rises from 29% to 33% despite nearly tripling the denominator. The ticket-08 note's diagnostic forecast (top-1 6/19, top-3 12/19, Stop Window hits 4/22) is close for top-1 and top-3 but on different denominators; it counted MAG as a finisher and included Ricciardo's three stops in the window-hit denominator the same way we do.
+
+Takeaway for the baseline: ticket 10 fixes the single biggest hole in the "before" number, but the top-1 figure is still dominated by mirrored-tie enumeration order (ticket 14) and the Stop Window hits by degenerate token-Stint windows (ticket 13), both of which need to land before this is used as the Circuit Tendency baseline.

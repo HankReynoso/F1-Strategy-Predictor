@@ -83,6 +83,11 @@ class NeutralisationPeriod:
 class RaceOutcome:
     stints: tuple[Stint, ...] = ()
     neutralisations: tuple[NeutralisationPeriod, ...] = field(default=())
+    # Driver -> took the chequered flag. Lapped finishers are True; drivers
+    # who retired, were disqualified, or did not start are False. Belongs to
+    # the race outcome, never to pre-race information, so changing it never
+    # changes a Pre-race Prediction.
+    finishing_status: dict[str, bool] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

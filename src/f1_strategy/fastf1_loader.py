@@ -84,6 +84,7 @@ def load_weekend(
 
     stints = _race_stints(race, drivers=set(teams))
     neutralisations = _neutralisation_periods(race)
+    finishing_status = _finishing_status(race, drivers=set(teams))
 
     pit_loss = _pit_loss_at_circuit(
         circuit=circuit,
@@ -102,7 +103,11 @@ def load_weekend(
             teams=teams,
             pit_loss=pit_loss,
         ),
-        race=RaceOutcome(stints=stints, neutralisations=neutralisations),
+        race=RaceOutcome(
+            stints=stints,
+            neutralisations=neutralisations,
+            finishing_status=finishing_status,
+        ),
     )
 
 
@@ -191,6 +196,26 @@ def _race_stints(race, drivers: set[str]) -> tuple[Stint, ...]:
                 Stint(driver=driver, compound=compound, start_lap=start, end_lap=end)
             )
     return tuple(stints)
+
+
+def _finishing_status(race, drivers: set[str]) -> dict[str, bool]:
+    """True if the driver took the chequered flag (lapped or not).
+
+    FastF1's `results.Status` is "Finished" for lead-lap finishers and
+    "Lapped" (or "+N Lap(s)" in older FastF1 versions) for lapped
+    finishers. Anything else — "Retired", "Disqualified", "Did not
+    start", a crash reason, etc. — means they did not take the flag,
+    including a driver classified after retiring in the last few laps.
+    """
+    results = race.results
+    status: dict[str, bool] = {}
+    for _, row in results.iterrows():
+        driver = str(row["Abbreviation"])
+        if driver not in drivers:
+            continue
+        raw = str(row["Status"])
+        status[driver] = raw == "Finished" or raw == "Lapped" or raw.startswith("+")
+    return status
 
 
 def _neutralisation_periods(race) -> tuple[NeutralisationPeriod, ...]:

@@ -93,7 +93,22 @@ def weekend(
     race_laps: int = 57,
     pit_loss: float = 22.0,
     race_stints: list[Stint] | None = None,
+    finishing_status: dict[str, bool] | None = None,
 ) -> RaceWeekend:
+    stints = tuple(race_stints or ())
+    if finishing_status is None:
+        # Convenience default: every driver with any Stint whose last Stint
+        # reaches the race distance took the chequered flag. Tests that need
+        # a lapped finisher or a late-retiring classified driver pass an
+        # explicit `finishing_status`.
+        last_by_driver: dict[str, int] = {}
+        for stint in stints:
+            last_by_driver[stint.driver] = max(
+                last_by_driver.get(stint.driver, 0), stint.end_lap
+            )
+        finishing_status = {
+            driver: last_lap >= race_laps for driver, last_lap in last_by_driver.items()
+        }
     return RaceWeekend(
         pre_race=PreRaceInfo(
             circuit="Test Circuit",
@@ -104,7 +119,9 @@ def weekend(
             teams=teams,
             pit_loss=pit_loss,
         ),
-        race=RaceOutcome(stints=tuple(race_stints or ()), neutralisations=()),
+        race=RaceOutcome(
+            stints=stints, neutralisations=(), finishing_status=dict(finishing_status)
+        ),
     )
 
 

@@ -23,10 +23,25 @@ from f1_strategy.report import format_summary, format_table, strategy_label
 S, M, H = Compound.SOFT, Compound.MEDIUM, Compound.HARD
 
 
-def with_race(base, *, stints=(), neutralisations=()):
+def with_race(base, *, stints=(), neutralisations=(), finishing_status=None):
+    stints = tuple(stints)
+    if finishing_status is None:
+        last_by_driver: dict[str, int] = {}
+        for stint in stints:
+            last_by_driver[stint.driver] = max(
+                last_by_driver.get(stint.driver, 0), stint.end_lap
+            )
+        finishing_status = {
+            driver: last_lap >= base.pre_race.race_laps
+            for driver, last_lap in last_by_driver.items()
+        }
     return RaceWeekend(
         pre_race=base.pre_race,
-        race=RaceOutcome(stints=tuple(stints), neutralisations=tuple(neutralisations)),
+        race=RaceOutcome(
+            stints=stints,
+            neutralisations=tuple(neutralisations),
+            finishing_status=dict(finishing_status),
+        ),
     )
 
 

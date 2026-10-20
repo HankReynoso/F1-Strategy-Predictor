@@ -5,9 +5,11 @@ scored two ways. Strategy Match checks top-1 and top-3 on stop count and
 Compound sequence only, so a stop a lap or two early still counts. Stop Window
 hits are scored separately: the n-th actual stop lap is compared with the n-th
 predicted Stop Window of the matching Candidate Strategy. A race with any
-Safety Car or VSC period is flagged as a Neutralised Race. Drivers who retired
-(last Stint ending before the race distance) or never completed a stop are
-marked unscoreable and left out of the race summary.
+Safety Car or VSC period is flagged as a Neutralised Race. Scoreability is
+read from `RaceOutcome.finishing_status`: a driver is scoreable only if they
+took the chequered flag (lapped or not) and made at least one stop. Drivers
+who retired — including those classified after retiring in the last few laps —
+are unscoreable and left out of the race summary.
 """
 
 from dataclasses import dataclass
@@ -59,10 +61,15 @@ TOP_K = 3
 def compare(
     predictions: dict[str, StrategyPrediction], weekend: RaceWeekend
 ) -> RaceComparison:
-    race_laps = weekend.pre_race.race_laps
     stints_by_driver = _group_by_driver(weekend.race.stints)
+    finishing_status = weekend.race.finishing_status
     scores = {
-        driver: _score_driver(driver, prediction, stints_by_driver.get(driver, []), race_laps)
+        driver: _score_driver(
+            driver,
+            prediction,
+            stints_by_driver.get(driver, []),
+            finishing_status.get(driver, False),
+        )
         for driver, prediction in predictions.items()
     }
     scoreable = [score for score in scores.values() if not score.unscoreable]
@@ -83,11 +90,12 @@ def _score_driver(
     driver: str,
     prediction: StrategyPrediction,
     stints: list[Stint],
-    race_laps: int,
+    took_chequered_flag: bool,
 ) -> DriverScore:
-    unscoreable = (
-        not stints or len(stints) < 2 or stints[-1].end_lap < race_laps
-    )
+    # Scoreable only if the driver took the chequered flag (lapped or not)
+    # and made at least one stop. A Dry Race requires two Compounds, so a
+    # finisher with a single Stint never ran a legal Strategy.
+    unscoreable = not took_chequered_flag or len(stints) < 2
     if unscoreable:
         return DriverScore(
             driver=driver,

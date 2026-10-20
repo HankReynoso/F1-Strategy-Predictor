@@ -4,14 +4,14 @@
 
 **Blocked by:** None
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Category:** bug
 
-- [ ] The race weekend description carries each starter's finishing status, kept with the race outcome, not pre-race information
-- [ ] A lapped finisher with at least one stop is scoreable
-- [ ] A retired driver is still unscoreable
-- [ ] Hand-built tests go through `compare`; one slow test checks Singapore 2024 scores 19 or 18 drivers, not 7
+- [x] The race weekend description carries each starter's finishing status, kept with the race outcome, not pre-race information
+- [x] A lapped finisher with at least one stop is scoreable
+- [x] A retired driver is still unscoreable
+- [x] Hand-built tests go through `compare`; one slow test checks Singapore 2024 scores 19 or 18 drivers, not 7
 
 ## Comments
 
@@ -51,3 +51,44 @@ Each starter's finishing status travels with the race outcome. A driver who took
 **Out of scope:**
 - Mirrored-tie credit (ticket 14) and Degradation changes (ticket 13)
 - Any change to which Strategy counts as the driver's actual Strategy
+
+## Implementation notes
+
+**What was built (2026-10-20).**
+
+- `RaceOutcome` gains a `finishing_status: dict[str, bool]` field mapping driver → took the chequered flag. It lives next to `stints` and `neutralisations` so it cannot leak into pre-race information; `PreRaceInfo` is unchanged.
+- The FastF1 loader fills it from `race.results["Status"]`: `"Finished"` and `"Lapped"` both mean the driver took the flag, as does the older FastF1 form that starts with `"+"` (e.g. `"+1 Lap"`). Everything else — `"Retired"`, `"Disqualified"`, DNS reasons, collision reasons — maps to False. The 2024 Singapore results confirmed the two forms we see today ("Finished", "Lapped", "Retired"); other 2024 races checked (Monaco, Austria) show the same vocabulary.
+- The scorer no longer infers retirement from Stint end laps. `_score_driver` reads `finishing_status[driver]` and marks a driver unscoreable iff they didn't take the flag or they ran fewer than two Stints. Everything else about `compare()` is unchanged.
+- `tests/weekend_builder.weekend()` and both test files' `with_race()` helpers accept an explicit `finishing_status`, and default to deriving it from the stints so existing hand-built tests (where a retired driver's stints end before `race_laps`) keep behaving the same. Tests that need a lapped finisher or a late-retiring classified driver pass `finishing_status` directly.
+
+**FastF1 Status values for Singapore 2024** (checked before trusting the field):
+
+- 7 lead-lap finishers (NOR, VER, PIA, RUS, LEC, HAM, SAI): Status `"Finished"`, ClassifiedPosition 1–7.
+- 11 lapped classified finishers (ALO, HUL, PER, COL, TSU, OCO, STR, ZHO, BOT, GAS, RIC): Status `"Lapped"`, ClassifiedPosition 8–18.
+- MAG: Status `"Retired"`, ClassifiedPosition `"19"` (classified 19th despite retiring on lap 57 of 62).
+- ALB: Status `"Retired"`, ClassifiedPosition `"R"` (retired lap 15).
+
+The FIA's classification is 19 finishers. FastF1 flags only 18 as "took the flag" (MAG is `"Retired"`), which matches ticket 10's triage decision: scoreable requires the chequered flag, and a classified driver who retired is still unscoreable.
+
+**Decisions.**
+
+- *Where finishing status lives.* On `RaceOutcome` as a `dict[str, bool]`. The ticket's "Key interfaces" names this placement; `PreRaceInfo` must not carry it to prevent leaking into predictions. The hand-built test `test_finishing_status_lives_on_race_outcome_and_does_not_change_predictions` checks both: `predict(finished_race) == predict(retired_race)` while `compare()` reaches different conclusions.
+- *What value shape.* A `dict[str, bool]` keyed by driver abbreviation (True = took the flag). Alternatives considered: an enum like `FinishingStatus { FINISHED, LAPPED, RETIRED, DNS, DSQ }` on `RaceOutcome`; or a per-Stint `took_flag` flag. Rejected the enum because the scorer only ever needs the one bit (lapped vs lead-lap is already visible from Stint end laps, and the ticket decision is binary). Rejected the per-Stint flag because that encodes car-level state as per-Stint data.
+- *Retirement no longer inferred from Stint end laps.* The scorer's `last_stint.end_lap < race_laps` check is gone; scoreability is only `finishing_status.get(driver, False) and len(stints) >= 2`. This matches the ticket's "Stint end laps are no longer used to infer retirement".
+- *Test-helper default.* Instead of forcing every existing test to pass an explicit `finishing_status`, the helpers derive a sensible default from the stints (driver's last stint reaches race_laps → True else False). This preserves the behaviour of pre-ticket-10 tests of retirement cases without having them re-encode the inference rule. The new ticket-10 tests pass `finishing_status` directly.
+- *Classified-but-retired case.* Modelled with a dedicated hand-built test (`test_a_classified_driver_who_retired_near_the_end_is_unscoreable`) whose stints end on `race_laps - 1` like a lapped finisher's but with `finishing_status={driver: False}`. The test mirrors Magnussen's Singapore 2024 situation and asserts the scorer agrees with the triage decision.
+- *A finisher who never stopped stays unscoreable.* A separate hand-built test confirms this: in a Dry Race a single-Compound no-stop isn't a legal Strategy, so even with `finishing_status=True` the driver is unscoreable (the ticket's third acceptance criterion).
+
+**Testing.**
+
+- Four new hand-built tests in `tests/test_compare_with_actual_race.py` cover: a lapped finisher scoreable; a classified late retirement unscoreable; a finisher without a stop unscoreable; and `finishing_status` on `RaceOutcome` not affecting predictions.
+- One slow test in `tests/test_singapore_scoreability.py` loads Singapore 2024 and asserts `comparison.summary.scoreable_drivers == 18`, that the loader filled `finishing_status` for the right drivers (MAG and ALB False; NOR and ALO True), and that the total True count is 18.
+- Existing retirement and never-stopped tests pass unchanged because the test helpers default `finishing_status` from the stints.
+
+**Deviations.** None from the ticket. The slow test asserts 18 scoreable, which is the number the Agent Brief gives (19 classified minus Magnussen) and which the FastF1 Status happens to produce directly.
+
+**Follow-ups.**
+
+- The CLI/report don't surface *why* a driver is unscoreable (retired vs no stop), only the fact. If the Backtest UI wants to split these, add a reason enum alongside `finishing_status` or on `DriverScore`.
+- The post-rerun numbers for Singapore 2024 are in ticket 08's `## Rerun after ticket 10` section, kept separate from the original "before" record. The baseline for Circuit Tendency should still wait for tickets 13 and 14 to land, which the ticket 08 note calls out.
+- `ClassifiedPosition` on `RaceOutcome` was discussed in the ticket text but is not stored; nothing downstream needs it, and we can add it later without disturbing scoreability.

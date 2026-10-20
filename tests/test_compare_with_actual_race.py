@@ -14,10 +14,25 @@ from f1_strategy import (
 S, M, H = Compound.SOFT, Compound.MEDIUM, Compound.HARD
 
 
-def with_race(base, *, stints=(), neutralisations=()):
+def with_race(base, *, stints=(), neutralisations=(), finishing_status=None):
+    stints = tuple(stints)
+    if finishing_status is None:
+        last_by_driver: dict[str, int] = {}
+        for stint in stints:
+            last_by_driver[stint.driver] = max(
+                last_by_driver.get(stint.driver, 0), stint.end_lap
+            )
+        finishing_status = {
+            driver: last_lap >= base.pre_race.race_laps
+            for driver, last_lap in last_by_driver.items()
+        }
     return RaceWeekend(
         pre_race=base.pre_race,
-        race=RaceOutcome(stints=tuple(stints), neutralisations=tuple(neutralisations)),
+        race=RaceOutcome(
+            stints=stints,
+            neutralisations=tuple(neutralisations),
+            finishing_status=dict(finishing_status),
+        ),
     )
 
 
@@ -201,6 +216,70 @@ def test_retired_drivers_are_unscoreable():
     assert score.top_1_match is False
     assert score.top_3_match is False
     assert score.stop_window_hits == ()
+
+
+def test_a_lapped_finisher_with_at_least_one_stop_is_scoreable():
+    # VER's last Stint ends at lap 56, one short of 57: lapped finisher, not
+    # retired. With the chequered flag taken (finishing_status True) they
+    # must be scored.
+    base = weekend(standard_practice(), TEAMS)
+    predictions = predict(base)
+    top = predictions["VER"].candidates[0]
+    first, second = top.strategy.compounds
+    stints = [Stint("VER", first, 1, top.stops[0].best_lap), Stint("VER", second, top.stops[0].best_lap + 1, 56)]
+    race = with_race(base, stints=stints, finishing_status={"VER": True})
+
+    score = compare(predictions, race).scores["VER"]
+
+    assert score.unscoreable is False
+    assert score.actual is not None
+    assert score.actual.strategy == top.strategy
+    assert score.top_1_match is True
+
+
+def test_a_classified_driver_who_retired_near_the_end_is_unscoreable():
+    # Mirrors the Magnussen case (Singapore 2024, retired lap 57 of 62,
+    # classified 19th). Last Stint ends on race_laps - 1 like a lapped
+    # finisher, but finishing_status says they didn't take the flag.
+    base = weekend(standard_practice(), TEAMS)
+    stints = [Stint("VER", M, 1, 25), Stint("VER", H, 26, 56)]
+    race = with_race(base, stints=stints, finishing_status={"VER": False})
+
+    score = compare(predict(base), race).scores["VER"]
+
+    assert score.unscoreable is True
+    assert score.actual is None
+
+
+def test_a_finisher_who_never_stopped_is_still_unscoreable():
+    base = weekend(standard_practice(), TEAMS)
+    # Single Stint over the whole race, finishing_status True: a no-stop
+    # finish is not a legal Dry Race Strategy, so it stays unscoreable.
+    stints = [Stint("VER", M, 1, 57)]
+    race = with_race(base, stints=stints, finishing_status={"VER": True})
+
+    score = compare(predict(base), race).scores["VER"]
+
+    assert score.unscoreable is True
+    assert score.actual is None
+
+
+def test_finishing_status_lives_on_race_outcome_and_does_not_change_predictions():
+    base = weekend(standard_practice(), TEAMS)
+    pre_race = base.pre_race
+    stints = [Stint("VER", M, 1, 25), Stint("VER", H, 26, 56)]
+
+    finished_race = with_race(base, stints=stints, finishing_status={"VER": True})
+    retired_race = with_race(base, stints=stints, finishing_status={"VER": False})
+
+    # finishing_status is on RaceOutcome, not PreRaceInfo.
+    assert "finishing_status" not in pre_race.__dataclass_fields__
+    assert "finishing_status" in finished_race.race.__dataclass_fields__
+    # Predictions are identical regardless of finishing_status.
+    assert predict(finished_race) == predict(retired_race)
+    # But scorer reaches different conclusions.
+    assert compare(predict(finished_race), finished_race).scores["VER"].unscoreable is False
+    assert compare(predict(retired_race), retired_race).scores["VER"].unscoreable is True
 
 
 def test_drivers_who_never_completed_a_stop_are_unscoreable():
