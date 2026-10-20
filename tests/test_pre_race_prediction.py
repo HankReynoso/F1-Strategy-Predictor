@@ -20,6 +20,7 @@ from f1_strategy import (
     PreRaceInfo,
     RaceOutcome,
     RaceWeekend,
+    RemainingSetsRule,
     Session,
     Settings,
     Stint,
@@ -860,3 +861,138 @@ def test_on_a_very_flat_degradation_weekend_stop_windows_do_not_cover_the_whole_
                 f"Stop Window laps {stop.first_lap}-{stop.last_lap} "
                 "spans too much of the race"
             )
+
+
+# --- Ticket 12: no runnable Strategy fallback --------------------------------
+
+
+def _starving_laps(driver: str) -> list[Lap]:
+    """Fit new sets of every Soft (8) and Hard (2) and 2 Mediums.
+
+    After this, `remaining_sets` is {S: 0, M: 1, H: 0}; no 2-stint Strategy
+    uses two different Compounds without at least 2 of one of them (M-H and
+    H-M need 1M+1H, which has H=0; the only legal 1-stop with M=1,H=0,S=0
+    is nothing), and no 3+ stint Strategy survives either. This re-creates
+    Alonso's situation at Baku 2024.
+    """
+    laps: list[Lap] = []
+    lap_number = 1
+    for i in range(8):
+        laps.append(
+            Lap(
+                driver=driver, lap_number=lap_number, lap_time=92.0,
+                tyre_set=f"{driver}-newS-{i}", compound=S, tyre_age=1,
+                new_when_fitted=True,
+            )
+        )
+        lap_number += 1
+    for i in range(2):
+        for j in range(5):
+            laps.append(
+                Lap(
+                    driver=driver, lap_number=lap_number, lap_time=90.0 + 0.04 * j,
+                    tyre_set=f"{driver}-newM-{i}", compound=M, tyre_age=j + 1,
+                    new_when_fitted=True,
+                )
+            )
+            lap_number += 1
+    for i in range(2):
+        for j in range(5):
+            laps.append(
+                Lap(
+                    driver=driver, lap_number=lap_number, lap_time=90.0 + 0.01 * j,
+                    tyre_set=f"{driver}-newH-{i}", compound=H, tyre_age=j + 1,
+                    new_when_fitted=True,
+                )
+            )
+            lap_number += 1
+    return laps
+
+
+def test_no_runnable_strategy_falls_back_to_used_set_count_and_is_flagged():
+    # ALO has new-only Remaining Sets S=0, M=1, H=0 — no legal Strategy. He
+    # ran a used Hard set in practice (saved from a previous session), so
+    # the used-set fallback adds 1 Hard back and M-H / H-M become runnable.
+    # The flag `USED_SET_FALLBACK` is reported on the prediction.
+    laps = [
+        *_starving_laps("ALO"),
+        # One used-Hard stint fitted in practice.
+        *[
+            Lap(
+                driver="ALO", lap_number=200 + j, lap_time=91.0 + 0.03 * j,
+                tyre_set="ALO-usedH-1", compound=H, tyre_age=5 + j,
+                new_when_fitted=False,
+            )
+            for j in range(6)
+        ],
+        # VER gives the field a Degradation signal.
+        *degrading_run("VER", "VER-S1", S, 0.12, first_lap=1),
+        *degrading_run("VER", "VER-M1", M, 0.07, first_lap=20),
+        *degrading_run("VER", "VER-H1", H, 0.04, first_lap=40),
+    ]
+    teams = {"ALO": "Aston Martin", "VER": "Red Bull Racing"}
+    predictions = predict(weekend(laps, teams))
+
+    alo = predictions["ALO"]
+    assert alo.remaining_sets_rule is RemainingSetsRule.USED_SET_FALLBACK
+    assert alo.remaining_sets[H] >= 1
+    assert alo.candidates, "fallback must yield at least one Candidate Strategy"
+    for cand in alo.candidates:
+        assert set(cand.strategy.compounds) & {M, H}
+    # The teammate (not actually a teammate, but a different team) is
+    # unaffected: new-only rule applies.
+    assert predictions["VER"].remaining_sets_rule is RemainingSetsRule.NEW_ONLY
+
+
+def test_teammate_of_fallback_driver_is_unaffected():
+    # ALO is starved; STR drives nothing. STR must get a normal, non-flagged
+    # prediction under the new-only rule.
+    laps = [
+        *_starving_laps("ALO"),
+        *degrading_run("VER", "VER-S1", S, 0.12, first_lap=1),
+        *degrading_run("VER", "VER-M1", M, 0.07, first_lap=20),
+        *degrading_run("VER", "VER-H1", H, 0.04, first_lap=40),
+    ]
+    teams = {"ALO": "Aston Martin", "STR": "Aston Martin", "VER": "Red Bull Racing"}
+    predictions = predict(weekend(laps, teams))
+
+    str_prediction = predictions["STR"]
+    assert str_prediction.remaining_sets_rule is RemainingSetsRule.NEW_ONLY
+    assert str_prediction.remaining_sets == {S: 8, M: 3, H: 2}
+    assert predictions["ALO"].remaining_sets_rule in {
+        RemainingSetsRule.USED_SET_FALLBACK,
+        RemainingSetsRule.UNFILTERED_FALLBACK,
+    }
+
+
+def test_fallback_falls_through_to_unfiltered_when_used_sets_dont_help():
+    # ALO is starved AND ran no used sets. Used-set fallback produces the
+    # same empty pool, so the predictor falls through to UNFILTERED_FALLBACK
+    # and the driver gets every legal 1-3 stop Strategy.
+    laps = [
+        *_starving_laps("ALO"),
+        *degrading_run("VER", "VER-S1", S, 0.12, first_lap=1),
+        *degrading_run("VER", "VER-M1", M, 0.07, first_lap=20),
+        *degrading_run("VER", "VER-H1", H, 0.04, first_lap=40),
+    ]
+    teams = {"ALO": "Aston Martin", "VER": "Red Bull Racing"}
+    predictions = predict(weekend(laps, teams), Settings(plausible_margin_s=math.inf))
+
+    alo = predictions["ALO"]
+    assert alo.remaining_sets_rule is RemainingSetsRule.UNFILTERED_FALLBACK
+    assert alo.candidates
+    # Unfiltered: should contain M-H and H-M and more.
+    compounds_sets = {c.strategy.compounds for c in alo.candidates}
+    assert (M, H) in compounds_sets
+    assert (H, M) in compounds_sets
+    # The pre-race prediction completes for everyone; no crash.
+    assert predictions["VER"].candidates
+
+
+def test_drivers_with_runnable_strategies_keep_new_only_rule():
+    # The ticket-04 standard practice case: no driver is starved; everyone
+    # gets NEW_ONLY. (Existing tests cover the strategy content; this test
+    # just pins the flag.)
+    predictions = predict(weekend(standard_practice(), TEAMS))
+    for prediction in predictions.values():
+        assert prediction.remaining_sets_rule is RemainingSetsRule.NEW_ONLY

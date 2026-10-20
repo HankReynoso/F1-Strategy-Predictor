@@ -2,13 +2,31 @@
 
 import math
 from dataclasses import dataclass
+from enum import Enum
 from itertools import product
 
 from .degradation import DegradationEstimate, base_lap_time, team_degradation
 from .settings import Settings
 from .simulator import simulate, stop_windows
-from .tyre_allocation import can_run, remaining_sets
+from .tyre_allocation import can_run, remaining_sets, remaining_sets_including_used
 from .weekend import DRY_COMPOUNDS, Compound, RaceWeekend
+
+
+class RemainingSetsRule(Enum):
+    """Which Remaining Sets rule produced a driver's prediction.
+
+    Most drivers are predicted under NEW_ONLY (ADR-0002): Remaining Sets is
+    the FIA allocation minus new sets fitted in pre-race sessions. For a
+    driver whose new-only count leaves no runnable Strategy, the predictor
+    falls back to USED_SET_FALLBACK (ADR-0002 amendment): used sets fitted
+    pre-race are added to the pool, capped at the allocation. If that still
+    leaves nothing, UNFILTERED_FALLBACK gives the driver every legal Strategy
+    with no Remaining Sets pruning at all.
+    """
+
+    NEW_ONLY = "new-only"
+    USED_SET_FALLBACK = "used-set fallback"
+    UNFILTERED_FALLBACK = "unfiltered fallback"
 
 
 class NotDryRaceError(ValueError):
@@ -47,6 +65,7 @@ class StrategyPrediction:
     candidates: tuple[CandidateStrategy, ...]
     team_degradation: dict[Compound, DegradationEstimate]
     remaining_sets: dict[Compound, int]
+    remaining_sets_rule: RemainingSetsRule = RemainingSetsRule.NEW_ONLY
 
 
 def legal_strategies() -> list[Strategy]:
@@ -69,11 +88,21 @@ def predict(
     team_rates = team_degradation(pre_race, settings)
     base = base_lap_time(pre_race, settings)
     driver_remaining = remaining_sets(pre_race)
+    fallback_remaining: dict[str, dict[Compound, int]] | None = None
 
     predictions: dict[str, StrategyPrediction] = {}
     for driver, team in pre_race.teams.items():
         estimates = team_rates[team]
         rates = {c: e.rate for c, e in estimates.items()}
+        remaining = driver_remaining[driver]
+        rule = RemainingSetsRule.NEW_ONLY
+        if not _has_runnable_strategy(remaining, pre_race.race_laps, settings):
+            if fallback_remaining is None:
+                fallback_remaining = remaining_sets_including_used(pre_race)
+            remaining = fallback_remaining[driver]
+            rule = RemainingSetsRule.USED_SET_FALLBACK
+            if not _has_runnable_strategy(remaining, pre_race.race_laps, settings):
+                rule = RemainingSetsRule.UNFILTERED_FALLBACK
         predictions[driver] = _predict_driver(
             driver,
             estimates,
@@ -81,10 +110,22 @@ def predict(
             pre_race.race_laps,
             pre_race.pit_loss,
             base,
-            driver_remaining[driver],
+            remaining,
+            rule,
             settings,
         )
     return predictions
+
+
+def _has_runnable_strategy(
+    remaining: dict[Compound, int], race_laps: int, settings: Settings
+) -> bool:
+    for strategy in legal_strategies():
+        if len(strategy.compounds) * settings.min_stint_length > race_laps:
+            continue
+        if can_run(strategy.compounds, remaining):
+            return True
+    return False
 
 
 def _predict_driver(
@@ -95,11 +136,14 @@ def _predict_driver(
     pit_loss: float,
     base: float,
     remaining: dict[Compound, int],
+    rule: RemainingSetsRule,
     settings: Settings,
 ) -> StrategyPrediction:
     simulated = []
     for strategy in legal_strategies():
-        if not can_run(strategy.compounds, remaining):
+        if rule is not RemainingSetsRule.UNFILTERED_FALLBACK and not can_run(
+            strategy.compounds, remaining
+        ):
             continue
         if len(strategy.compounds) * settings.min_stint_length > race_laps:
             continue
@@ -140,7 +184,7 @@ def _predict_driver(
         )
         for (strategy, race), weight in zip(simulated, weights)
     )
-    return StrategyPrediction(driver, candidates, estimates, dict(remaining))
+    return StrategyPrediction(driver, candidates, estimates, dict(remaining), rule)
 
 
 def _require_dry_race(weekend: RaceWeekend) -> None:

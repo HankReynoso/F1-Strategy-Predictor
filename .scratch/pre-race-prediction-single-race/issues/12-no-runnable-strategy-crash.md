@@ -4,13 +4,13 @@
 
 **Blocked by:** None
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Category:** bug
 
-- [ ] A driver with no runnable Strategy doesn't crash the prediction for the rest of the field
-- [ ] What the driver gets instead is decided and tested through `predict()` (for example, fall back to counting used sets, or report that driver as unpredictable)
-- [ ] Baku 2024 can be predicted
+- [x] A driver with no runnable Strategy doesn't crash the prediction for the rest of the field
+- [x] What the driver gets instead is decided and tested through `predict()` (for example, fall back to counting used sets, or report that driver as unpredictable)
+- [x] Baku 2024 can be predicted
 
 ## Comments
 
@@ -39,13 +39,71 @@ For a driver with no runnable Strategy under the new-only count, Remaining Sets 
 - The report: shows the flag next to the driver
 
 **Acceptance criteria:**
-- [ ] A hand-built driver with no runnable Strategy under the new-only count gets a prediction from the used-set count, flagged, without affecting teammates or anyone else
-- [ ] A driver who still has no runnable Strategy gets an unfiltered, flagged prediction
-- [ ] Drivers with runnable Strategies are unchanged (existing tests pass)
-- [ ] Baku 2024 can be predicted by the command
-- [ ] ADR-0002's amendment (written at triage) still matches what was built; update it if the implementation differed
-- [ ] Tests go through `predict()`
+- [x] A hand-built driver with no runnable Strategy under the new-only count gets a prediction from the used-set count, flagged, without affecting teammates or anyone else
+- [x] A driver who still has no runnable Strategy gets an unfiltered, flagged prediction
+- [x] Drivers with runnable Strategies are unchanged (existing tests pass)
+- [x] Baku 2024 can be predicted by the command
+- [x] ADR-0002's amendment (written at triage) still matches what was built; update it if the implementation differed
+- [x] Tests go through `predict()`
 
 **Out of scope:**
 - Tracking physical Tyre Sets across sessions (rejected in ADR-0002)
 - Changing the new-only rule for drivers it works for
+
+## Implementation notes
+
+**Implemented (2026-10-20), test-first through `predict()`.** Four new tests in `tests/test_pre_race_prediction.py` under "Ticket 12" ran red before any code change, then went green on the implementation below. Full fast suite: 70 passed.
+
+**What was built.**
+
+- `predictor.RemainingSetsRule` — enum with `NEW_ONLY`, `USED_SET_FALLBACK`, `UNFILTERED_FALLBACK`. Surfaces on `StrategyPrediction.remaining_sets_rule` (new field, defaults to `NEW_ONLY`).
+- `tyre_allocation.remaining_sets_including_used(pre_race)` — fallback Remaining Sets per driver per Compound: `max(0, min(allocation, new_remaining + distinct_used_tyre_set_ids))`. Factored out of `remaining_sets` via a shared `_collect_fitted_sets` helper.
+- `predictor.predict()` — for each driver, tries the new-only count first; if `_has_runnable_strategy` finds nothing, swaps in the used-set count and flags the prediction `USED_SET_FALLBACK`; if that still finds nothing, flags `UNFILTERED_FALLBACK`. The fallback dict is computed once per weekend (lazily, only if any driver needs it).
+- `predictor._predict_driver(…, rule, …)` — skips the `can_run` filter when `rule is UNFILTERED_FALLBACK`, so the driver gets every legal 1–3 stop Strategy that fits the min-Stint-length budget. Other rules keep the pruning.
+- `report.format_table()` — appends `[used-set fallback]` or `[unfiltered fallback]` to the driver's first row when the flag is not `NEW_ONLY`. `NEW_ONLY` rows look unchanged.
+
+**Decision: how to count distinct used sets per Compound.**
+
+FastF1 has no reliable per-set identity across sessions (ADR-0002, ticket 07): the loader assigns a per-stint `tyre_set` id of the form `"{driver}-{session}-stint{N}-{compound}"`. A physical set fitted in two sessions therefore shows up as two different `tyre_set` ids with `new_when_fitted=False` on both. I chose to count **distinct `tyre_set` ids where `new_when_fitted=False`** per Compound, capped by the Tyre Allocation.
+
+- *Why this count.* It needs no cross-session matching, matches how `remaining_sets` already counts new sets, and is monotone: adding another used-set stint can only increase the count, never decrease it. Over-counting is bounded by the min(allocation, …) cap at the top of the fallback, so a driver can never end up with more Remaining Sets than the regulation allowance.
+- *Why over-counting is acceptable.* The fallback is already an approximation flagged on the prediction (ADR-0002 amendment), and this ticket's whole point is that being slightly over-permissive is preferable to the empty-Candidate-set crash it replaces. The user is warned by the flag that the Remaining Sets number is approximate.
+- *Rejected alternatives.*
+  - *Match by Tyre Life across sessions* — rejected in ADR-0002 and ticket 07: the heuristic resolves cleanly for only about half of used stints at Monza 2024, and we would then need a fallback-of-the-fallback for the ambiguous cases.
+  - *Count 1 used set per Compound per driver whenever any used stint happened* — strictly under-counts and would not reach M=2 or H=1 for a driver like Alonso who ran several saved used sets of the same Compound; defeats the point.
+  - *Count physical sets by combining new + used ids by Compound* — same ambiguity as Tyre Life matching with no better information to resolve it; the min() cap already stops the count going silly.
+
+**Baku 2024 result (`uv run f1-strategy 2024 "Azerbaijan Grand Prix"`).**
+
+Weekend loaded: 51 laps, Pit Loss 24.1 s, Neutralised Race (SC).
+
+- *Drivers needing the fallback:* **ALO**, on `[used-set fallback]`. His new-only Remaining Sets (S=0, M=1, H=0) match the ticket's description; the fallback count added his saved used Hard and Medium back into the pool, and he received a 2-stop favourite set.
+- *Drivers on `UNFILTERED_FALLBACK`:* none.
+- *Drivers on `NEW_ONLY` (unchanged behaviour):* every other starter, including Alonso's teammate STR (unscoreable: did not finish, so the fallback flag is unrelated to his row).
+
+Race summary at Baku 2024 (defaults):
+
+- Scoreable drivers: 16 of 20
+- Top-1 Strategy Match: 2/16 (12%)
+- Top-3 Strategy Match: 5/16 (31%)
+- Stop Window hits: 5/17 actual stops (29%)
+- Neutralised Race: yes
+
+**Ticket 13 compatibility.** Checked that ticket 13's new `min_stint_length=5` does not change which drivers hit this fallback at Baku. The reason is structural: `_has_runnable_strategy` filters by `len(compounds) * min_stint_length > race_laps` and by `can_run`. At 51 laps, every 1-, 2-, or 3-stop Strategy passes the length budget (10 × 5 = 50 ≤ 51 for a 4-stint 3-stop, and the strictly cheaper 2- and 3-stint strategies pass trivially). So the only reason a driver gets no runnable Strategy is Remaining Sets pruning — unchanged by ticket 13. Alonso remains the only Baku fallback driver.
+
+**ADR-0002 amendment.** The amendment reads "recounted including used sets seen in that driver's pre-race sessions (counted per Compound, never above the Tyre Allocation)". The implementation matches: new_remaining + distinct used `tyre_set` ids, capped at allocation. Minor clarification added to the ADR explaining what "distinct used sets" means in the absence of per-set identity.
+
+**CONTEXT.md.** No new domain terms. "Remaining Sets" and "Tyre Allocation" already cover the vocabulary; the fallback flag is an implementation detail of how Remaining Sets is counted, not a new concept.
+
+**Open questions, known limitations, follow-ups.**
+
+- *Over-count of used sets.* The distinct-tyre_set-id count treats a physical set fitted in two sessions as two sets. The allocation cap bounds the error, but a driver with the same used set appearing across FP2 and Q will register as having 2 used Mediums rather than 1. Not fixable without the per-set identity that ADR-0002 rejected; the flag on the prediction documents the approximation.
+- *Unfiltered fallback has no race-weekend coverage yet.* The `UNFILTERED_FALLBACK` path has a hand-built test (`…falls_through_to_unfiltered…`) but is not exercised by any real 2024 weekend. If the Backtest encounters a driver whose used-set count is still empty (hard to construct in practice), that will be its first real-data test.
+- *Fallback is per-driver, not per-Compound.* A driver whose new-only count rules out every Strategy gets the used-set fallback across all Compounds, not just the one that pinched. Simpler and matches the ADR amendment; a per-Compound refinement would need its own flag on each Candidate Strategy.
+- *Fallback-flag reporting is textual only.* The `[used-set fallback]` note sits at the end of the driver's first row. If the summary later gains a "flagged predictions" row, that would be the natural place for it.
+
+**Review feedback for the user.**
+
+- Done test-first: the four Ticket 12 tests ran red (`AttributeError: 'StrategyPrediction' has no attribute 'remaining_sets_rule'`) before the implementation; green afterwards.
+- No existing tests needed changes — the `remaining_sets_rule` field defaults to `NEW_ONLY` for every existing path.
+- Baku 2024's `[used-set fallback]` appears exactly where ticket 08 flagged the crash: Alonso. The teammate STR row (unscoreable: did not finish) is unaffected.

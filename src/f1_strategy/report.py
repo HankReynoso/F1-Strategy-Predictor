@@ -7,7 +7,7 @@ actual Strategy and how it scored. `format_summary` prints the race summary.
 
 from dataclasses import fields
 
-from .predictor import CandidateStrategy, StrategyPrediction
+from .predictor import CandidateStrategy, RemainingSetsRule, StrategyPrediction
 from .scorer import DriverScore, RaceComparison
 from .settings import Settings
 from .weekend import Compound, PreRaceInfo
@@ -40,13 +40,20 @@ def format_table(
     lines = [_HEADER, "-" * len(_HEADER)]
     for driver, prediction in predictions.items():
         score = comparison.scores[driver]
+        rule_note = _rule_note(prediction.remaining_sets_rule)
         for rank, candidate in enumerate(prediction.candidates[:TOP_SHOWN], start=1):
             first_column = driver if rank == 1 else ""
             row = f"{first_column:<8}{rank:<3}{_candidate_columns(candidate)}"
             if rank == 1:
                 row += _score_columns(score)
+                if rule_note:
+                    row = row.rstrip() + f"  [{rule_note}]"
             lines.append(row.rstrip())
     return "\n".join(lines)
+
+
+def _rule_note(rule: RemainingSetsRule) -> str:
+    return "" if rule is RemainingSetsRule.NEW_ONLY else rule.value
 
 
 def format_summary(comparison: RaceComparison) -> str:
