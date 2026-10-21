@@ -4,7 +4,7 @@ Anything drawn from previous seasons (Historical Degradation, Pit Loss, and late
 
 ## Exception: Pit Loss
 
-Pit Loss may draw on races from before the Regulation Era. It depends mostly on the pit lane (its length and speed limit), not on the cars, so the reason for the era rule doesn't apply. Without this exception, every race in the first season of an era (all of 2022) would be an Excluded Race. Rare pit lane changes are ignored for now.
+Pit Loss may draw on races from before the Regulation Era when the circuit has no same-era race to measure from. It depends mostly on the pit lane (its length and speed limit), not on the cars, so the reason for the era rule doesn't apply. Without this exception, every race in the first season of an era (all of 2022) would be an Excluded Race. Rare pit lane changes are ignored for now.
 
 ## Considered Options
 
