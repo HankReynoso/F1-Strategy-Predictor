@@ -68,6 +68,12 @@ class RaceResult:
     Compounds, how many per-team per-Compound Degradation estimates came
     from each `DegradationSource`. Summed across races, it is the run's
     "how often each Degradation source was used" (spec story 32).
+
+    `estimated_pit_loss` is True when this race's Pit Loss was estimated
+    from pit lane length and speed limit instead of measured from past
+    races (ticket 07). Carried on the per-race record so the Backtest
+    Result and the compare command can flag which races rest on an
+    estimate (spec story 31).
     """
 
     season: int
@@ -80,6 +86,7 @@ class RaceResult:
     degradation_sources: Mapping[DegradationSource, int] = field(
         default_factory=dict
     )
+    estimated_pit_loss: bool = False
 
 
 @dataclass(frozen=True)

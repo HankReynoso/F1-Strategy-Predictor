@@ -25,6 +25,12 @@ import sys
 from collections.abc import Callable, Sequence
 
 from .backtest import RaceSpec, format_backtest, run_backtest
+from .backtest_io import (
+    RunMetadata,
+    default_run_at,
+    detect_code_version,
+    save_backtest_result,
+)
 from .predictor import NotDryRaceError, predict
 from .report import format_header, format_summary, format_table
 from .scorer import compare
@@ -97,6 +103,25 @@ def _run_backtest_mode(
     parser.add_argument(
         "seasons", type=int, nargs="+", help="seasons to include, e.g. 2024 2025"
     )
+    parser.add_argument(
+        "--label",
+        default=None,
+        help=(
+            "short label for this run (e.g. 'baseline'). When set, the run "
+            "writes a Backtest Result data and summary file. When omitted, "
+            "the run prints but does not save (Smoke-Set-style)."
+        ),
+    )
+    parser.add_argument(
+        "--no-save",
+        action="store_true",
+        help="run and print only; never save, even if --label is given.",
+    )
+    parser.add_argument(
+        "--results-dir",
+        default="results/backtest",
+        help="where saved Backtest Results go (default: results/backtest).",
+    )
     args = parser.parse_args(argv)
 
     if list_season is None or load is None:
@@ -121,6 +146,23 @@ def _run_backtest_mode(
     )
     result = run_backtest(races, load=load, settings=settings, progress=progress)
     print(format_backtest(result))
+
+    if args.label and not args.no_save:
+        commit, dirty = detect_code_version()
+        metadata = RunMetadata(
+            label=args.label,
+            run_at=default_run_at(),
+            code_commit=commit,
+            uncommitted_changes=dirty,
+            seasons_in_scope=tuple(args.seasons),
+            settings=settings,
+        )
+        paths = save_backtest_result(result, args.results_dir, metadata=metadata)
+        print(
+            f"Saved Backtest Result {args.label!r} to:\n"
+            f"  {paths.data}\n  {paths.summary}",
+            file=sys.stderr,
+        )
     return 0
 
 

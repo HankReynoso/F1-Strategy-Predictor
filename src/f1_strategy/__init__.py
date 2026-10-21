@@ -9,6 +9,14 @@ from .backtest import (
     format_backtest,
     run_backtest,
 )
+from .backtest_io import (
+    RunMetadata,
+    SavedPaths,
+    detect_code_version,
+    default_run_at,
+    load_backtest_result,
+    save_backtest_result,
+)
 from .degradation import DegradationEstimate, DegradationSource
 from .predictor import (
     CandidateStrategy,
@@ -63,6 +71,8 @@ __all__ = [
     "RaceSummary",
     "RaceWeekend",
     "RemainingSetsRule",
+    "RunMetadata",
+    "SavedPaths",
     "ScoreTotals",
     "Session",
     "Settings",
@@ -70,7 +80,11 @@ __all__ = [
     "Strategy",
     "StrategyPrediction",
     "compare",
+    "default_run_at",
+    "detect_code_version",
     "format_backtest",
+    "load_backtest_result",
     "predict",
     "run_backtest",
+    "save_backtest_result",
 ]
