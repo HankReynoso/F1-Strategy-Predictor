@@ -53,7 +53,7 @@ A practice Stint of consistently timed consecutive laps at race pace on a heavy 
 _Avoid_: race sim, race run
 
 **Historical Degradation**:
-A circuit's field-level Degradation per dry Compound, estimated from previous seasons' race Stints at that circuit (current regulations, 2022+, recent seasons weighted more, never the race being predicted). Used when no team ran a Compound in practice this weekend.
+A circuit's field-level Degradation per dry Compound, estimated from previous seasons' race Stints at that circuit (same Regulation Era only, recent seasons weighted more, never the race being predicted). Used when no team ran a Compound in practice this weekend.
 _Avoid_: history rate, past-season deg
 
 **Push Lap**:
@@ -90,6 +90,10 @@ Describes a Candidate Strategy that is legal, runnable with the driver's Remaini
 
 ### History
 
+**Regulation Era**:
+A run of seasons raced under one set of technical regulations: 2022–2025 is one era, and 2026 starts a new one. Historical information is only drawn from races in the same Regulation Era as the race being predicted.
+_Avoid_: rules era, generation
+
 **Circuit Tendency**:
 How often each stop count and Compound sequence has been run at a circuit in past Dry Races, with recent seasons counting more.
 
@@ -103,6 +107,14 @@ How strategy choices shift with a driver's circumstances, such as starting posit
 
 **Backtest**:
 Running Strategy Predictions on past races and scoring them against the Strategies drivers actually ran.
+
+**Excluded Race**:
+A race weekend in a Backtest's scope that produced no scores, because it was refused (not a Dry Race), failed, or its data couldn't be loaded. Every Excluded Race is listed with its reason.
+_Avoid_: skipped race, failed race
+
+**Backtest Result**:
+The saved record of one Backtest run: its scores overall and by breakdown, its Excluded Races, the settings used and the code version.
+_Avoid_: report, run output
 
 **Strategy Match**:
 A prediction whose stop count and Compound sequence equal what the driver actually ran. Stop Window accuracy is scored separately.
