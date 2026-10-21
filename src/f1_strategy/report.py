@@ -39,12 +39,18 @@ def format_header(
         f"Pit Loss {pre_race.pit_loss:.1f} s",
         f"Settings: {used}",
     ]
-    pre_era_seasons = _pit_loss_pre_era_seasons(pre_race)
-    if pre_era_seasons:
+    if pre_race.estimated_pit_loss:
         parts.append(
-            "Pit Loss from pre-era seasons "
-            f"{_season_list(pre_era_seasons)} (ADR-0004 exception)"
+            "Pit Loss estimated from pit lane length and speed limit "
+            "(ticket 07, no circuit history)"
         )
+    else:
+        pre_era_seasons = _pit_loss_pre_era_seasons(pre_race)
+        if pre_era_seasons:
+            parts.append(
+                "Pit Loss from pre-era seasons "
+                f"{_season_list(pre_era_seasons)} (ADR-0004 exception)"
+            )
     if predictions:
         fallback = _historical_fallback_lines(pre_race, predictions)
         if fallback:

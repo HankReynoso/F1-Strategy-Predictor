@@ -68,8 +68,15 @@ class PreRaceInfo:
     # Past seasons that contributed to Pit Loss, oldest first. Normally all
     # within the race's Regulation Era; for a first-season race with no
     # same-era history, falls back to pre-era seasons (ADR-0004 exception).
-    # Empty for hand-built test weekends that pass `pit_loss` directly.
+    # Empty when Pit Loss was estimated from pit lane length and speed
+    # limit (ticket 07) and for hand-built test weekends that pass
+    # `pit_loss` directly.
     pit_loss_seasons: tuple[int, ...] = ()
+    # True when Pit Loss came from the hand-maintained pit lane table and
+    # the estimation formula (ticket 07), not from measured past races.
+    # Set when a first-time circuit has neither same-era nor pre-era
+    # history to measure from.
+    estimated_pit_loss: bool = False
     # New sets of each dry Compound allocated to every driver this weekend.
     # None means use the FIA regulation default for the weekend format.
     tyre_allocation: dict["Compound", int] | None = None

@@ -170,18 +170,36 @@ def test_saved_backtest_result_reads_back_identical(tmp_path):
 
 
 def test_estimated_pit_loss_flag_round_trips(tmp_path):
-    # Ticket 07 adds an estimated-Pit-Loss flag to each race. The saver and
-    # reader must carry it through so a saved Result can be read without
-    # losing which races rest on an estimate.
+    # Ticket 07 adds an estimated-Pit-Loss flag to each race, plus the
+    # per-race Pit Loss figure and the seasons it drew on (empty when
+    # estimated). The saver and reader must carry all three through so a
+    # saved Result can be read without losing which races rest on an
+    # estimate and which seasons the measured ones came from.
     result = _full_result(tmp_path)
-    flagged = replace(result.races[0], estimated_pit_loss=True)
-    result = replace(result, races=(flagged, *result.races[1:]))
+    flagged = replace(
+        result.races[0],
+        estimated_pit_loss=True,
+        pit_loss=20.5,
+        pit_loss_seasons=(),
+    )
+    measured = replace(
+        result.races[1],
+        estimated_pit_loss=False,
+        pit_loss=22.1,
+        pit_loss_seasons=(2022, 2023),
+    )
+    result = replace(result, races=(flagged, measured, *result.races[2:]))
     metadata = _metadata()
 
     paths = save_backtest_result(result, tmp_path, metadata=metadata)
     reloaded, _ = load_backtest_result(paths.data)
 
     assert reloaded.races[0].estimated_pit_loss is True
+    assert reloaded.races[0].pit_loss == pytest.approx(20.5)
+    assert reloaded.races[0].pit_loss_seasons == ()
+    assert reloaded.races[1].estimated_pit_loss is False
+    assert reloaded.races[1].pit_loss == pytest.approx(22.1)
+    assert reloaded.races[1].pit_loss_seasons == (2022, 2023)
     assert all(r.estimated_pit_loss is False for r in reloaded.races[1:])
 
 

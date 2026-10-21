@@ -69,11 +69,14 @@ class RaceResult:
     from each `DegradationSource`. Summed across races, it is the run's
     "how often each Degradation source was used" (spec story 32).
 
-    `estimated_pit_loss` is True when this race's Pit Loss was estimated
-    from pit lane length and speed limit instead of measured from past
-    races (ticket 07). Carried on the per-race record so the Backtest
-    Result and the compare command can flag which races rest on an
-    estimate (spec story 31).
+    `pit_loss`, `pit_loss_seasons` and `estimated_pit_loss` carry the
+    provenance ticket 07 (and ticket 03's pre-era fallback) record on
+    `PreRaceInfo`, so the Backtest Result can show which races rest on
+    an estimate (spec story 31) and which ones drew Pit Loss from
+    pre-era seasons. `estimated_pit_loss` is True when this race's Pit
+    Loss was estimated from pit lane length and speed limit instead of
+    measured from past races (ticket 07); `pit_loss_seasons` is empty in
+    that case and otherwise lists the past seasons that contributed.
     """
 
     season: int
@@ -83,10 +86,12 @@ class RaceResult:
     neutralised_race: bool
     summary: RaceSummary
     actual_stops: int
+    pit_loss: float = 0.0
+    pit_loss_seasons: tuple[int, ...] = ()
+    estimated_pit_loss: bool = False
     degradation_sources: Mapping[DegradationSource, int] = field(
         default_factory=dict
     )
-    estimated_pit_loss: bool = False
 
 
 @dataclass(frozen=True)
@@ -221,6 +226,9 @@ def run_backtest(
                 neutralised_race=comparison.neutralised_race,
                 summary=comparison.summary,
                 actual_stops=actual_stops,
+                pit_loss=weekend.pre_race.pit_loss,
+                pit_loss_seasons=tuple(weekend.pre_race.pit_loss_seasons),
+                estimated_pit_loss=weekend.pre_race.estimated_pit_loss,
                 degradation_sources=_count_degradation_sources(
                     predictions, weekend
                 ),
@@ -403,6 +411,14 @@ def format_backtest(result: BacktestResult) -> str:
         ):
             count = result.degradation_source_counts[source]
             lines.append(f"  {source.value}: {count}")
+    estimated_races = [r for r in result.races if r.estimated_pit_loss]
+    if estimated_races:
+        lines += ["", "Pit Loss estimated (ticket 07, no circuit history):"]
+        for race in estimated_races:
+            lines.append(
+                f"  {race.season} {race.event} ({race.circuit}): "
+                f"{race.pit_loss:.1f} s"
+            )
     if result.excluded:
         lines += ["", "Excluded Races:"]
         for excluded in result.excluded:

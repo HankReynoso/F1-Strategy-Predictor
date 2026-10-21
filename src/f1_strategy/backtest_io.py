@@ -145,6 +145,8 @@ def _encode_race(race: RaceResult) -> dict:
         "circuit": race.circuit,
         "is_sprint_weekend": race.is_sprint_weekend,
         "neutralised_race": race.neutralised_race,
+        "pit_loss": race.pit_loss,
+        "pit_loss_seasons": list(race.pit_loss_seasons),
         "estimated_pit_loss": race.estimated_pit_loss,
         "actual_stops": race.actual_stops,
         "summary": {
@@ -214,6 +216,8 @@ def _decode_race(data: dict) -> RaceResult:
             stop_window_hits=summary["stop_window_hits"],
         ),
         actual_stops=data["actual_stops"],
+        pit_loss=float(data.get("pit_loss", 0.0)),
+        pit_loss_seasons=tuple(data.get("pit_loss_seasons", ())),
         degradation_sources={
             _SOURCE_BY_VALUE[key]: count
             for key, count in data["degradation_sources"].items()

@@ -192,6 +192,23 @@ def test_a_2023_races_historical_degradation_uses_2022_only() -> None:
         assert hist.seasons == (2022,), (compound, hist.seasons)
 
 
+def test_miami_2022_pit_loss_is_estimated_from_the_pit_lane_table() -> None:
+    # Ticket 07: Miami is the one 2022 circuit with no earlier race at all
+    # (FastF1's Location "Miami" has no match before 2022), so Pit Loss is
+    # estimated from the hand-maintained pit lane table and flagged.
+    from f1_strategy.pit_lane_table import (
+        estimated_pit_loss,
+        pit_lane_entry,
+    )
+
+    weekend = load_weekend(2022, "Miami Grand Prix", cache_dir=CACHE_DIR)
+    assert weekend.pre_race.circuit == "Miami"
+    assert weekend.pre_race.estimated_pit_loss is True
+    assert weekend.pre_race.pit_loss_seasons == ()
+    expected = estimated_pit_loss(pit_lane_entry("Miami"))
+    assert weekend.pre_race.pit_loss == pytest.approx(expected)
+
+
 def test_list_season_2024_marks_sprint_weekends() -> None:
     # Ticket 02 acceptance: the loader lists a season's race weekends with
     # sprints marked. 2024 ran 24 championship rounds, of which six were

@@ -16,6 +16,7 @@ import fastf1
 import pandas as pd
 
 from .backtest import RaceSpec
+from .pit_lane_table import estimated_pit_loss, pit_lane_entry
 from .regulation_era import PIT_LOSS_PRE_ERA_MIN_SEASON, era_start
 from .weekend import (
     DRY_COMPOUNDS,
@@ -106,7 +107,12 @@ def load_weekend(
     neutralisations = _neutralisation_periods(race)
     finishing_status = _finishing_status(race, drivers=set(teams))
 
-    pit_loss, pit_loss_seasons, historical_degradation = _measure_pit_loss_and_history(
+    (
+        pit_loss,
+        pit_loss_seasons,
+        estimated_pit_loss,
+        historical_degradation,
+    ) = _measure_pit_loss_and_history(
         circuit=circuit,
         race_season=season,
         pit_loss_min_season=pit_loss_min_season,
@@ -126,6 +132,7 @@ def load_weekend(
             teams=teams,
             pit_loss=pit_loss,
             pit_loss_seasons=pit_loss_seasons,
+            estimated_pit_loss=estimated_pit_loss,
             historical_degradation=historical_degradation,
         ),
         race=RaceOutcome(
@@ -316,19 +323,27 @@ def _measure_pit_loss_and_history(
     cache_dir: str | Path,
     fuel_effect_s_per_lap: float,
     history_min_stint_length: int,
-) -> tuple[float, tuple[int, ...], dict[Compound, HistoricalDegradation]]:
+) -> tuple[float, tuple[int, ...], bool, dict[Compound, HistoricalDegradation]]:
     """Measure Pit Loss and Historical Degradation from past races.
 
     When ``pit_loss_min_season`` is ``None``, the ADR-0004 Pit Loss exception
-    applies: try same-era seasons first, and fall back to
-    ``[PIT_LOSS_PRE_ERA_MIN_SEASON, history_min_season)`` only when no
-    same-era race at the circuit produced a Pit Loss sample. When it is an
-    explicit integer, that lower bound is honoured directly (used by tests
-    that want to pin or widen the range).
+    applies: try same-era seasons first, fall back to
+    ``[PIT_LOSS_PRE_ERA_MIN_SEASON, history_min_season)`` when no same-era
+    race at the circuit produced a Pit Loss sample, and finally estimate
+    from the pit lane table (ticket 07) when the circuit has no earlier
+    race under this FastF1 ``Location`` at all. When it is an explicit
+    integer, that lower bound is honoured directly (used by tests that
+    want to pin or widen the range); the pit-lane-table fallback is
+    skipped in that case, so a pinned range that comes up empty still
+    raises as before.
 
     Historical Degradation always draws from the same-era range
-    ``[history_min_season, race_season)``; it has no pre-era fallback
-    (ADR-0004's main rule).
+    ``[history_min_season, race_season)``; it has no pre-era or
+    pit-lane-table fallback (ADR-0004's main rule).
+
+    Returns ``(pit_loss, pit_loss_seasons, estimated_pit_loss,
+    historical_degradation)``. ``pit_loss_seasons`` is empty when the
+    estimate was used.
     """
     primary_min = (
         pit_loss_min_season if pit_loss_min_season is not None else history_min_season
@@ -345,33 +360,53 @@ def _measure_pit_loss_and_history(
         pit_loss_required=pit_loss_min_season is not None,
     )
     if pit_loss is not None:
-        return pit_loss, pit_seasons, historical_degradation
+        return pit_loss, pit_seasons, False, historical_degradation
 
-    # Pit Loss fell through: fall back to pre-era seasons, keeping the
+    # Pit Loss fell through same-era: try pre-era seasons, keeping the
     # same-era Historical Degradation (ADR-0004 exception is Pit Loss only).
     pre_era_min = PIT_LOSS_PRE_ERA_MIN_SEASON
     pre_era_max = history_min_season  # exclusive upper bound
-    if pre_era_min >= pre_era_max:
-        # No pre-era seasons to try (e.g. hypothetical race before 2018).
-        raise ValueError(
-            f"no previous seasons' races at {circuit!r} were available to measure "
-            f"Pit Loss from (same era empty and no pre-era seasons to fall back to)"
+    if pre_era_min < pre_era_max:
+        fallback_pit_loss, fallback_seasons, _ = _past_races_at_circuit(
+            circuit=circuit,
+            race_season=race_season,
+            min_season=pre_era_min,
+            cache_dir=cache_dir,
+            fuel_effect_s_per_lap=fuel_effect_s_per_lap,
+            history_min_stint_length=history_min_stint_length,
+            pit_loss_min_season=pre_era_min,
+            # Disable Historical Degradation inside this fallback call:
+            # the real history was already measured against the same-era
+            # range above.
+            history_min_season=pre_era_max,
+            pit_loss_required=False,
         )
-    fallback_pit_loss, fallback_seasons, _ = _past_races_at_circuit(
-        circuit=circuit,
-        race_season=race_season,
-        min_season=pre_era_min,
-        cache_dir=cache_dir,
-        fuel_effect_s_per_lap=fuel_effect_s_per_lap,
-        history_min_stint_length=history_min_stint_length,
-        pit_loss_min_season=pre_era_min,
-        # Disable Historical Degradation inside this fallback call: the real
-        # history was already measured against the same-era range above.
-        history_min_season=pre_era_max,
-        pit_loss_required=True,
+        if fallback_pit_loss is not None:
+            return (
+                fallback_pit_loss,
+                fallback_seasons,
+                False,
+                historical_degradation,
+            )
+
+    # Last fallback: estimate from the hand-maintained pit lane table
+    # (ticket 07). This is only reached when FastF1 has no earlier race at
+    # this ``Location`` to measure from — in 2022–2025 that is Miami 2022
+    # and Las Vegas 2023.
+    entry = pit_lane_entry(circuit)
+    if entry is not None:
+        return (
+            estimated_pit_loss(entry),
+            (),
+            True,
+            historical_degradation,
+        )
+
+    raise ValueError(
+        f"no previous seasons' races at {circuit!r} were available to measure "
+        f"Pit Loss from, and {circuit!r} has no entry in the pit lane table "
+        f"(ticket 07)"
     )
-    assert fallback_pit_loss is not None  # pit_loss_required=True raises if missing
-    return fallback_pit_loss, fallback_seasons, historical_degradation
 
 
 def _past_races_at_circuit(
