@@ -1,16 +1,30 @@
-"""Command: predict a named race's Strategies and compare them with what happened.
+"""Command: predict a named race's Strategies and compare them with what happened,
+or run a Backtest over chosen seasons.
+
+Single-race mode (unchanged):
 
     uv run f1-strategy 2024 "Italian Grand Prix"
 
 Loads the weekend through FastF1, makes every driver's Pre-race Prediction,
 compares it with the actual race and prints the per-driver table followed by
 the race summary. A race that isn't a Dry Race is refused.
+
+Backtest mode:
+
+    uv run f1-strategy backtest 2024
+    uv run f1-strategy backtest 2022 2023 2024 2025
+
+Lists the chosen seasons' race weekends through FastF1 and runs each one
+through `predict` and `compare`, printing progress and the Backtest Result.
 """
+
+from __future__ import annotations
 
 import argparse
 import sys
 from collections.abc import Callable, Sequence
 
+from .backtest import RaceSpec, format_backtest, run_backtest
 from .predictor import NotDryRaceError, predict
 from .report import format_header, format_summary, format_table
 from .scorer import compare
@@ -18,9 +32,21 @@ from .settings import Settings
 from .weekend import RaceWeekend
 
 Loader = Callable[[int, str], RaceWeekend]
+SeasonLister = Callable[[int], Sequence[RaceSpec]]
 
 
-def main(argv: Sequence[str] | None = None, load: Loader | None = None) -> int:
+def main(
+    argv: Sequence[str] | None = None,
+    load: Loader | None = None,
+    list_season: SeasonLister | None = None,
+) -> int:
+    argv = list(argv) if argv is not None else sys.argv[1:]
+    if argv and argv[0] == "backtest":
+        return _run_backtest_mode(argv[1:], load=load, list_season=list_season)
+    return _run_single_race(argv, load=load)
+
+
+def _run_single_race(argv: Sequence[str], load: Loader | None) -> int:
     parser = argparse.ArgumentParser(
         prog="f1-strategy",
         description="Pre-race Predictions for one race, compared with the actual race.",
@@ -30,11 +56,7 @@ def main(argv: Sequence[str] | None = None, load: Loader | None = None) -> int:
     args = parser.parse_args(argv)
 
     if load is None:
-        import fastf1
-
-        from .fastf1_loader import load_weekend as load
-
-        fastf1.set_log_level("WARNING")
+        load = _fastf1_load()
 
     settings = Settings()
     weekend = load(args.season, args.event)
@@ -63,6 +85,59 @@ def main(argv: Sequence[str] | None = None, load: Loader | None = None) -> int:
     print()
     print(format_summary(comparison))
     return 0
+
+
+def _run_backtest_mode(
+    argv: Sequence[str], load: Loader | None, list_season: SeasonLister | None
+) -> int:
+    parser = argparse.ArgumentParser(
+        prog="f1-strategy backtest",
+        description="Run a Backtest over chosen seasons' race weekends.",
+    )
+    parser.add_argument(
+        "seasons", type=int, nargs="+", help="seasons to include, e.g. 2024 2025"
+    )
+    args = parser.parse_args(argv)
+
+    if list_season is None or load is None:
+        default_load, default_list = _fastf1_load_and_list()
+        if load is None:
+            load = default_load
+        if list_season is None:
+            list_season = default_list
+
+    races: list[RaceSpec] = []
+    for season in args.seasons:
+        races.extend(list_season(season))
+
+    def progress(label: str) -> None:
+        print(f"  {label}", file=sys.stderr, flush=True)
+
+    settings = Settings()
+    print(
+        f"Backtest over {len(races)} race weekend(s) "
+        f"in season(s) {', '.join(str(s) for s in args.seasons)}",
+        file=sys.stderr,
+    )
+    result = run_backtest(races, load=load, settings=settings, progress=progress)
+    print(format_backtest(result))
+    return 0
+
+
+def _fastf1_load() -> Loader:
+    import fastf1
+    from .fastf1_loader import load_weekend
+
+    fastf1.set_log_level("WARNING")
+    return load_weekend
+
+
+def _fastf1_load_and_list() -> tuple[Loader, SeasonLister]:
+    import fastf1
+    from .fastf1_loader import list_season, load_weekend
+
+    fastf1.set_log_level("WARNING")
+    return load_weekend, list_season
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ from typing import Iterable
 import fastf1
 import pandas as pd
 
+from .backtest import RaceSpec
 from .regulation_era import era_start
 from .weekend import (
     DRY_COMPOUNDS,
@@ -128,6 +129,34 @@ def load_weekend(
             finishing_status=finishing_status,
         ),
     )
+
+
+def list_season(
+    season: int, cache_dir: str | Path = ".cache/fastf1"
+) -> list[RaceSpec]:
+    """Every race weekend in a season, in round order, with sprints marked.
+
+    Pre-season testing weekends have `EventFormat == "testing"` and are
+    excluded. A sprint weekend is anything whose format is not
+    `"conventional"`.
+    """
+    cache_dir = Path(cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    fastf1.Cache.enable_cache(str(cache_dir))
+    schedule = fastf1.get_event_schedule(season, include_testing=False)
+    specs: list[RaceSpec] = []
+    for _, row in schedule.sort_values("RoundNumber").iterrows():
+        event_format = str(row.get("EventFormat", "conventional"))
+        if event_format == "testing":
+            continue
+        specs.append(
+            RaceSpec(
+                season=season,
+                event=str(row["EventName"]),
+                is_sprint_weekend=event_format != "conventional",
+            )
+        )
+    return specs
 
 
 def _starters_and_teams(race) -> dict[str, str]:

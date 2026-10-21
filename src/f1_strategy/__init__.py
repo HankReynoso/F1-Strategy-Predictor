@@ -1,3 +1,13 @@
+from .backtest import (
+    BacktestResult,
+    ExcludedRace,
+    ExclusionReason,
+    RaceResult,
+    RaceSpec,
+    ScoreTotals,
+    format_backtest,
+    run_backtest,
+)
 from .degradation import DegradationEstimate, DegradationSource
 from .predictor import (
     CandidateStrategy,
@@ -30,11 +40,14 @@ from .weekend import (
 
 __all__ = [
     "ActualStrategy",
+    "BacktestResult",
     "CandidateStrategy",
     "Compound",
     "DegradationEstimate",
     "DegradationSource",
     "DriverScore",
+    "ExcludedRace",
+    "ExclusionReason",
     "HistoricalDegradation",
     "Lap",
     "NeutralisationPeriod",
@@ -43,14 +56,19 @@ __all__ = [
     "PreRaceInfo",
     "RaceComparison",
     "RaceOutcome",
+    "RaceResult",
+    "RaceSpec",
     "RaceSummary",
     "RaceWeekend",
     "RemainingSetsRule",
+    "ScoreTotals",
     "Session",
     "Settings",
     "Stint",
     "Strategy",
     "StrategyPrediction",
     "compare",
+    "format_backtest",
     "predict",
+    "run_backtest",
 ]
