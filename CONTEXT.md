@@ -112,6 +112,14 @@ Running Strategy Predictions on past races and scoring them against the Strategi
 A race weekend in a Backtest's scope that produced no scores, because it was refused (not a Dry Race), failed, or its data couldn't be loaded. Every Excluded Race is listed with its reason.
 _Avoid_: skipped race, failed race
 
+**Held-out Season**:
+The season whose races are never used to tune settings, so its Backtest score shows how the model does on races it wasn't tuned on. Currently 2025; the seasons used for tuning are the **Tuning Seasons** (2022–2024).
+_Avoid_: test set, validation season
+
+**Smoke Set**:
+A small fixed set of races covering every path through the model, run as a quick Backtest to check nothing broke: Singapore, Monza, Baku, Austin and Jeddah 2024, plus one 2022 race.
+_Avoid_: sample races, quick set
+
 **Backtest Result**:
 The saved record of one Backtest run: its scores overall and by breakdown, its Excluded Races, the settings used and the code version.
 _Avoid_: report, run output
