@@ -5,6 +5,14 @@ from dataclasses import dataclass
 class Settings:
     """All tunable settings, with defaults. Tuned later by Backtesting."""
 
+    # Backtest run partitioning: the Tuning Seasons are available for later
+    # settings tuning; the Held-out Season is kept aside so its Backtest score
+    # shows how the model does on races it wasn't tuned on. Carried on
+    # Settings (not hard-coded into scoring) so a Backtest run records which
+    # seasons it treated as which, and the tuning spec can reuse them.
+    tuning_seasons: tuple[int, ...] = (2022, 2023, 2024)
+    held_out_season: int | None = 2025
+
     # How sharply probability falls off with Simulated Race Time gap: a
     # Candidate Strategy this many seconds slower than the fastest is e times
     # less likely. Smaller means sharper.
