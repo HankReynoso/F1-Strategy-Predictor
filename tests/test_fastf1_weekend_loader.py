@@ -147,6 +147,32 @@ def test_sprint_weekend_includes_sprint_qualifying_and_the_sprint(
     assert len({lap.driver for lap in sprint.laps}) >= 18
 
 
+def test_a_2022_race_gets_no_historical_degradation() -> None:
+    # ADR-0004 / ticket 01: Historical Degradation draws only on earlier
+    # seasons in the same Regulation Era. 2022 is the first season of the
+    # 2022–2025 era, so no past-era season exists and the dict is empty.
+    # Pit Loss still uses pre-era seasons via its exception (ADR-0004); its
+    # proper pre-era fallback default is ticket 03, so this test loosens
+    # pit_loss_min_season explicitly to make the load succeed.
+    weekend = load_weekend(
+        2022,
+        "Italian Grand Prix",
+        cache_dir=CACHE_DIR,
+        pit_loss_min_season=2018,
+    )
+    assert weekend.pre_race.historical_degradation == {}
+
+
+def test_a_2023_races_historical_degradation_uses_2022_only() -> None:
+    # ADR-0004 / ticket 01: a 2023 race, in the 2022–2025 era, has 2022 as
+    # the only earlier season in the era, so every Compound's historical
+    # fit lists 2022 and only 2022.
+    weekend = load_weekend(2023, "Italian Grand Prix", cache_dir=CACHE_DIR)
+    assert weekend.pre_race.historical_degradation  # at least one Compound
+    for compound, hist in weekend.pre_race.historical_degradation.items():
+        assert hist.seasons == (2022,), (compound, hist.seasons)
+
+
 def test_repeat_loads_come_from_the_local_cache(
     monza_2024: RaceWeekend, monkeypatch: pytest.MonkeyPatch
 ) -> None:

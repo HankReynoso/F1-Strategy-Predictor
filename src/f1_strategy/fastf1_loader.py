@@ -15,6 +15,7 @@ from typing import Iterable
 import fastf1
 import pandas as pd
 
+from .regulation_era import era_start
 from .weekend import (
     DRY_COMPOUNDS,
     Compound,
@@ -59,7 +60,7 @@ def load_weekend(
     event: str,
     cache_dir: str | Path = ".cache/fastf1",
     pit_loss_min_season: int = 2022,
-    history_min_season: int = 2022,
+    history_min_season: int | None = None,
     fuel_effect_s_per_lap: float = 0.03,
     history_min_stint_length: int = 4,
 ) -> RaceWeekend:
@@ -69,10 +70,14 @@ def load_weekend(
     `cache_dir` is the FastF1 on-disk cache; repeat loads come from it.
     `pit_loss_min_season` is the earliest season to draw pit-loss data from.
     `history_min_season` is the earliest season to fit historical Degradation
-    from (previous seasons' race Stints at this circuit, ticket 11). It must
-    match the fuel effect in `Settings` so historical rates are directly
-    comparable with weekend Long Run rates.
+    from (previous seasons' race Stints at this circuit, ticket 11). ``None``
+    means use the first season of ``season``'s Regulation Era (ADR-0004), the
+    one source of truth; pass an explicit integer only to override that for a
+    test. It must match the fuel effect in `Settings` so historical rates are
+    directly comparable with weekend Long Run rates.
     """
+    if history_min_season is None:
+        history_min_season = era_start(season)
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
     fastf1.Cache.enable_cache(str(cache_dir))
