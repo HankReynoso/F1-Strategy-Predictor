@@ -13,7 +13,8 @@ import pytest
 import requests
 
 from f1_strategy import Compound, NeutralisationPeriod, RaceWeekend
-from f1_strategy.fastf1_loader import load_weekend
+from f1_strategy.fastf1_loader import list_season, load_weekend
+from f1_strategy.regulation_era import era_start
 
 pytestmark = pytest.mark.slow
 
@@ -151,16 +152,34 @@ def test_a_2022_race_gets_no_historical_degradation() -> None:
     # ADR-0004 / ticket 01: Historical Degradation draws only on earlier
     # seasons in the same Regulation Era. 2022 is the first season of the
     # 2022–2025 era, so no past-era season exists and the dict is empty.
-    # Pit Loss still uses pre-era seasons via its exception (ADR-0004); its
-    # proper pre-era fallback default is ticket 03, so this test loosens
-    # pit_loss_min_season explicitly to make the load succeed.
-    weekend = load_weekend(
-        2022,
-        "Italian Grand Prix",
-        cache_dir=CACHE_DIR,
-        pit_loss_min_season=2018,
-    )
+    # Pit Loss uses pre-era seasons via its exception (ADR-0004, ticket 03)
+    # under default settings, so the load succeeds with no override.
+    weekend = load_weekend(2022, "Italian Grand Prix", cache_dir=CACHE_DIR)
     assert weekend.pre_race.historical_degradation == {}
+
+
+def test_a_2022_races_pit_loss_falls_back_to_pre_era_seasons() -> None:
+    # ADR-0004's Pit Loss exception / ticket 03: a 2022 race has no same-era
+    # race before it, so Pit Loss falls back to pre-era seasons (2018–2021).
+    # Monza was raced every year in that window.
+    weekend = load_weekend(2022, "Italian Grand Prix", cache_dir=CACHE_DIR)
+    seasons = weekend.pre_race.pit_loss_seasons
+    assert seasons, "pre-era fallback should contribute at least one season"
+    assert all(2018 <= s <= 2021 for s in seasons), seasons
+    assert weekend.pre_race.pit_loss > 10.0
+    assert weekend.pre_race.pit_loss < 40.0
+
+
+def test_a_2024_races_pit_loss_uses_only_same_era_seasons(
+    monza_2024: RaceWeekend,
+) -> None:
+    # A race that has same-era history (Monza 2022 and 2023 under the current
+    # Regulation Era) uses only those seasons for Pit Loss — the pre-era
+    # fallback is reserved for circuits with no same-era race before them.
+    era = era_start(2024)
+    seasons = monza_2024.pre_race.pit_loss_seasons
+    assert seasons, "same-era Monza history should supply Pit Loss"
+    assert all(era <= s < 2024 for s in seasons), seasons
 
 
 def test_a_2023_races_historical_degradation_uses_2022_only() -> None:
@@ -171,6 +190,25 @@ def test_a_2023_races_historical_degradation_uses_2022_only() -> None:
     assert weekend.pre_race.historical_degradation  # at least one Compound
     for compound, hist in weekend.pre_race.historical_degradation.items():
         assert hist.seasons == (2022,), (compound, hist.seasons)
+
+
+def test_list_season_2024_marks_sprint_weekends() -> None:
+    # Ticket 02 acceptance: the loader lists a season's race weekends with
+    # sprints marked. 2024 ran 24 championship rounds, of which six were
+    # sprint weekends (China, Miami, Austria, Austin, São Paulo, Qatar).
+    specs = list_season(2024, cache_dir=CACHE_DIR)
+    assert len(specs) == 24
+    sprints = {s.event for s in specs if s.is_sprint_weekend}
+    assert sprints == {
+        "Chinese Grand Prix",
+        "Miami Grand Prix",
+        "Austrian Grand Prix",
+        "United States Grand Prix",
+        "São Paulo Grand Prix",
+        "Qatar Grand Prix",
+    }
+    # The remaining 18 weekends are conventional.
+    assert len([s for s in specs if not s.is_sprint_weekend]) == 18
 
 
 def test_repeat_loads_come_from_the_local_cache(

@@ -65,6 +65,11 @@ class PreRaceInfo:
     sessions: tuple[Session, ...]
     teams: dict[str, str]  # driver -> team, for every driver who starts
     pit_loss: float  # seconds lost per pit stop at this circuit
+    # Past seasons that contributed to Pit Loss, oldest first. Normally all
+    # within the race's Regulation Era; for a first-season race with no
+    # same-era history, falls back to pre-era seasons (ADR-0004 exception).
+    # Empty for hand-built test weekends that pass `pit_loss` directly.
+    pit_loss_seasons: tuple[int, ...] = ()
     # New sets of each dry Compound allocated to every driver this weekend.
     # None means use the FIA regulation default for the weekend format.
     tyre_allocation: dict["Compound", int] | None = None

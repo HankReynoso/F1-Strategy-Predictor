@@ -10,6 +10,7 @@ from fractions import Fraction
 
 from .degradation import DegradationSource
 from .predictor import CandidateStrategy, RemainingSetsRule, StrategyPrediction
+from .regulation_era import era_start
 from .scorer import DriverScore, RaceComparison
 from .settings import Settings
 from .weekend import DRY_COMPOUNDS, Compound, PreRaceInfo
@@ -38,6 +39,12 @@ def format_header(
         f"Pit Loss {pre_race.pit_loss:.1f} s",
         f"Settings: {used}",
     ]
+    pre_era_seasons = _pit_loss_pre_era_seasons(pre_race)
+    if pre_era_seasons:
+        parts.append(
+            "Pit Loss from pre-era seasons "
+            f"{_season_list(pre_era_seasons)} (ADR-0004 exception)"
+        )
     if predictions:
         fallback = _historical_fallback_lines(pre_race, predictions)
         if fallback:
@@ -84,6 +91,22 @@ def _historical_fallback_lines(
 
 def _season_list(seasons: tuple[int, ...]) -> str:
     return ", ".join(str(s) for s in seasons)
+
+
+def _pit_loss_pre_era_seasons(pre_race: PreRaceInfo) -> tuple[int, ...]:
+    """Seasons used for Pit Loss that fall before the race's Regulation Era.
+
+    Non-empty only when the ADR-0004 Pit Loss exception kicked in (first-
+    season race at a circuit with no same-era history). Same-era-only Pit
+    Loss leaves it empty, so the header stays unchanged.
+    """
+    if not pre_race.pit_loss_seasons:
+        return ()
+    try:
+        era = era_start(pre_race.season)
+    except ValueError:
+        return ()
+    return tuple(s for s in pre_race.pit_loss_seasons if s < era)
 
 
 def format_table(

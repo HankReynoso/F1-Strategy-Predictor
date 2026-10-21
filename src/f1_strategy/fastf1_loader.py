@@ -16,7 +16,7 @@ import fastf1
 import pandas as pd
 
 from .backtest import RaceSpec
-from .regulation_era import era_start
+from .regulation_era import PIT_LOSS_PRE_ERA_MIN_SEASON, era_start
 from .weekend import (
     DRY_COMPOUNDS,
     Compound,
@@ -60,7 +60,7 @@ def load_weekend(
     season: int,
     event: str,
     cache_dir: str | Path = ".cache/fastf1",
-    pit_loss_min_season: int = 2022,
+    pit_loss_min_season: int | None = None,
     history_min_season: int | None = None,
     fuel_effect_s_per_lap: float = 0.03,
     history_min_stint_length: int = 4,
@@ -69,7 +69,12 @@ def load_weekend(
 
     `event` is anything FastF1 accepts (official name or location name).
     `cache_dir` is the FastF1 on-disk cache; repeat loads come from it.
-    `pit_loss_min_season` is the earliest season to draw pit-loss data from.
+    `pit_loss_min_season` is the earliest season to draw Pit Loss data from.
+    ``None`` means apply ADR-0004's exception: use the race's own Regulation
+    Era first, falling back to pre-era seasons (from
+    ``PIT_LOSS_PRE_ERA_MIN_SEASON``) only when the circuit has no same-era
+    race before the one being predicted. Pass an explicit integer only to
+    pin a lower bound in a test.
     `history_min_season` is the earliest season to fit historical Degradation
     from (previous seasons' race Stints at this circuit, ticket 11). ``None``
     means use the first season of ``season``'s Regulation Era (ADR-0004), the
@@ -101,15 +106,14 @@ def load_weekend(
     neutralisations = _neutralisation_periods(race)
     finishing_status = _finishing_status(race, drivers=set(teams))
 
-    pit_loss, historical_degradation = _past_races_at_circuit(
+    pit_loss, pit_loss_seasons, historical_degradation = _measure_pit_loss_and_history(
         circuit=circuit,
         race_season=season,
-        min_season=min(pit_loss_min_season, history_min_season),
+        pit_loss_min_season=pit_loss_min_season,
+        history_min_season=history_min_season,
         cache_dir=cache_dir,
         fuel_effect_s_per_lap=fuel_effect_s_per_lap,
         history_min_stint_length=history_min_stint_length,
-        pit_loss_min_season=pit_loss_min_season,
-        history_min_season=history_min_season,
     )
 
     return RaceWeekend(
@@ -121,6 +125,7 @@ def load_weekend(
             sessions=sessions,
             teams=teams,
             pit_loss=pit_loss,
+            pit_loss_seasons=pit_loss_seasons,
             historical_degradation=historical_degradation,
         ),
         race=RaceOutcome(
@@ -303,6 +308,72 @@ def _lap_neutralisation_kind(status: str) -> str | None:
     return None
 
 
+def _measure_pit_loss_and_history(
+    circuit: str,
+    race_season: int,
+    pit_loss_min_season: int | None,
+    history_min_season: int,
+    cache_dir: str | Path,
+    fuel_effect_s_per_lap: float,
+    history_min_stint_length: int,
+) -> tuple[float, tuple[int, ...], dict[Compound, HistoricalDegradation]]:
+    """Measure Pit Loss and Historical Degradation from past races.
+
+    When ``pit_loss_min_season`` is ``None``, the ADR-0004 Pit Loss exception
+    applies: try same-era seasons first, and fall back to
+    ``[PIT_LOSS_PRE_ERA_MIN_SEASON, history_min_season)`` only when no
+    same-era race at the circuit produced a Pit Loss sample. When it is an
+    explicit integer, that lower bound is honoured directly (used by tests
+    that want to pin or widen the range).
+
+    Historical Degradation always draws from the same-era range
+    ``[history_min_season, race_season)``; it has no pre-era fallback
+    (ADR-0004's main rule).
+    """
+    primary_min = (
+        pit_loss_min_season if pit_loss_min_season is not None else history_min_season
+    )
+    pit_loss, pit_seasons, historical_degradation = _past_races_at_circuit(
+        circuit=circuit,
+        race_season=race_season,
+        min_season=min(primary_min, history_min_season),
+        cache_dir=cache_dir,
+        fuel_effect_s_per_lap=fuel_effect_s_per_lap,
+        history_min_stint_length=history_min_stint_length,
+        pit_loss_min_season=primary_min,
+        history_min_season=history_min_season,
+        pit_loss_required=pit_loss_min_season is not None,
+    )
+    if pit_loss is not None:
+        return pit_loss, pit_seasons, historical_degradation
+
+    # Pit Loss fell through: fall back to pre-era seasons, keeping the
+    # same-era Historical Degradation (ADR-0004 exception is Pit Loss only).
+    pre_era_min = PIT_LOSS_PRE_ERA_MIN_SEASON
+    pre_era_max = history_min_season  # exclusive upper bound
+    if pre_era_min >= pre_era_max:
+        # No pre-era seasons to try (e.g. hypothetical race before 2018).
+        raise ValueError(
+            f"no previous seasons' races at {circuit!r} were available to measure "
+            f"Pit Loss from (same era empty and no pre-era seasons to fall back to)"
+        )
+    fallback_pit_loss, fallback_seasons, _ = _past_races_at_circuit(
+        circuit=circuit,
+        race_season=race_season,
+        min_season=pre_era_min,
+        cache_dir=cache_dir,
+        fuel_effect_s_per_lap=fuel_effect_s_per_lap,
+        history_min_stint_length=history_min_stint_length,
+        pit_loss_min_season=pre_era_min,
+        # Disable Historical Degradation inside this fallback call: the real
+        # history was already measured against the same-era range above.
+        history_min_season=pre_era_max,
+        pit_loss_required=True,
+    )
+    assert fallback_pit_loss is not None  # pit_loss_required=True raises if missing
+    return fallback_pit_loss, fallback_seasons, historical_degradation
+
+
 def _past_races_at_circuit(
     circuit: str,
     race_season: int,
@@ -312,7 +383,8 @@ def _past_races_at_circuit(
     history_min_stint_length: int,
     pit_loss_min_season: int,
     history_min_season: int,
-) -> tuple[float, dict[Compound, HistoricalDegradation]]:
+    pit_loss_required: bool = True,
+) -> tuple[float | None, tuple[int, ...], dict[Compound, HistoricalDegradation]]:
     """Load each previous season's race at the circuit once and read both the
     Pit Loss sample and the historical Degradation sample from it.
 
@@ -327,8 +399,8 @@ def _past_races_at_circuit(
     `race_season - 1`).
     """
     fastf1.Cache.enable_cache(str(cache_dir))
-    # (median_loss_for_race, weight)
-    pit_weighted: list[tuple[float, float]] = []
+    # (median_loss_for_race, weight, past season)
+    pit_weighted: list[tuple[float, float, int]] = []
     # Per Compound: list of (per-stint rate, lap count, weight, past season)
     hist_samples: dict[Compound, list[tuple[float, int, float, int]]] = {
         c: [] for c in DRY_COMPOUNDS
@@ -357,7 +429,7 @@ def _past_races_at_circuit(
                     losses = []
                 if losses:
                     losses.sort()
-                    pit_weighted.append((losses[len(losses) // 2], weight))
+                    pit_weighted.append((losses[len(losses) // 2], weight, season))
             if season >= history_min_season:
                 for compound, rate, n in _historical_stint_rates(
                     past, fuel_effect_s_per_lap, history_min_stint_length
@@ -365,12 +437,17 @@ def _past_races_at_circuit(
                     hist_samples[compound].append((rate, n, weight, season))
 
     if not pit_weighted:
-        raise ValueError(
-            f"no previous seasons' races at {circuit!r} were available to measure "
-            f"Pit Loss from (looked at {pit_loss_min_season}..{race_season - 1})"
-        )
-    total_weight = sum(w for _, w in pit_weighted)
-    pit_loss = sum(m * w for m, w in pit_weighted) / total_weight
+        if pit_loss_required:
+            raise ValueError(
+                f"no previous seasons' races at {circuit!r} were available to measure "
+                f"Pit Loss from (looked at {pit_loss_min_season}..{race_season - 1})"
+            )
+        pit_loss = None
+        pit_loss_seasons: tuple[int, ...] = ()
+    else:
+        total_weight = sum(w for _, w, _ in pit_weighted)
+        pit_loss = sum(m * w for m, w, _ in pit_weighted) / total_weight
+        pit_loss_seasons = tuple(sorted({s for _, _, s in pit_weighted}))
 
     historical_degradation: dict[Compound, HistoricalDegradation] = {}
     for compound, samples in hist_samples.items():
@@ -389,7 +466,7 @@ def _past_races_at_circuit(
             seasons=seasons_used,
             stint_count=len(samples),
         )
-    return pit_loss, historical_degradation
+    return pit_loss, pit_loss_seasons, historical_degradation
 
 
 def _historical_stint_rates(
@@ -491,7 +568,7 @@ def _pit_loss_at_circuit(
     min_season: int,
     cache_dir: str | Path,
 ) -> float:
-    pit_loss, _ = _past_races_at_circuit(
+    pit_loss, _, _ = _past_races_at_circuit(
         circuit=circuit,
         race_season=race_season,
         min_season=min_season,

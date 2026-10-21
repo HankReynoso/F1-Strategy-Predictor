@@ -220,7 +220,10 @@ inside a cloud session's lifetime as long as the cache survives.
   session was asked to run the real-data check only on Singapore 2024.
   A one-liner asserting `len(list_season(2024)) == 24` and that each
   entry's `is_sprint_weekend` flag matches FastF1's schedule format
-  is a safe follow-up; it isn't blocking.
+  is a safe follow-up; it isn't blocking. **Added in ticket 03 (2026-
+  10-21):** `test_list_season_2024_marks_sprint_weekends` asserts
+  `len(list_season(2024)) == 24` and that the sprint set is exactly
+  China, Miami, Austria, Austin, São Paulo and Qatar.
 - `format_backtest` is a plain-text summary. Ticket 05 (saving a
   Backtest Result) will own the readable-file format, which may want
   to extend this or replace it.

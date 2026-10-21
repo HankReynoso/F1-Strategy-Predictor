@@ -17,6 +17,12 @@ REGULATION_ERAS: tuple[tuple[int, int | None], ...] = (
     (2026, None),
 )
 
+# Pit Loss exception (ADR-0004): when a circuit has no same-era race before
+# the one being predicted, Pit Loss falls back to seasons from before the
+# era. FastF1's detailed-timing coverage starts in 2018, so that's the
+# earliest season the fallback reads from.
+PIT_LOSS_PRE_ERA_MIN_SEASON = 2018
+
 
 def era_of(season: int) -> tuple[int, int | None]:
     """Return the (first_season, last_season_or_None) tuple of the era that
