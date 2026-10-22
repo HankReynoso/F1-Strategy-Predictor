@@ -2,7 +2,7 @@
 
 **What to build:** Run the full 2022–2025 Backtest on the laptop with default settings and save it as the "baseline" Backtest Result. Then, in a session, analyse it: check Singapore 2024 matches its known scores, explain the headline and the weakest circuits, turn Excluded Races and clear model gaps into new needs-triage tickets, and re-triage ticket 15 (early Stop Windows) of the previous spec with the full-Backtest evidence.
 
-**Blocked by:** 01–08, 16 (Cross-season Location aliases)
+**Blocked by:** 01–08, 16 (Cross-season Location aliases), 17 (Wait out FastF1's rate limit)
 
 **Status:** ready-for-human
 
@@ -13,3 +13,7 @@ Why human: the full run needs the persistent FastF1 cache on the user's laptop; 
 - [ ] The headline, the Tuning Seasons vs Held-out Season split and the weakest circuits are summarised under a Results heading here
 - [ ] Every Excluded Race reason category and each clear model gap has a needs-triage ticket
 - [ ] Ticket 15 in `.scratch/pre-race-prediction-single-race/` is re-triaged with the full-Backtest evidence
+
+## Comments
+
+**First attempt (2026-10-22).** The user ran the full Backtest on the laptop with a cold cache and pushed it as `2026-10-22_baseline`. Only 5 of 92 races were scored: after about nine weekends FastF1's 500-calls-per-hour limit was hit and every later race became a `data unavailable` Excluded Race ("any API: 500 calls/h"). 2022 Australia and Canada were also excluded for "no previous seasons' races" at their circuits, probably because rate-limited past-race loads were silently skipped. The result was removed from `results/backtest/` (it stays in git history at commit 2dde6f8) so nothing compares against it, and ticket 17 was filed to make the Backtest wait out the limit. Re-run the baseline once 17 is done.
