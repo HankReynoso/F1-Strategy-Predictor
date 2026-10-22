@@ -2,7 +2,7 @@
 
 **What to build:** Run the full 2022–2025 Backtest on the laptop with default settings and save it as the "baseline" Backtest Result. Then, in a session, analyse it: check Singapore 2024 matches its known scores, explain the headline and the weakest circuits, turn Excluded Races and clear model gaps into new needs-triage tickets, and re-triage ticket 15 (early Stop Windows) of the previous spec with the full-Backtest evidence.
 
-**Blocked by:** 01–08
+**Blocked by:** 01–08, 16 (Cross-season Location aliases)
 
 **Status:** ready-for-human
 
