@@ -109,7 +109,7 @@ How strategy choices shift with a driver's circumstances, such as starting posit
 Running Strategy Predictions on past races and scoring them against the Strategies drivers actually ran.
 
 **Excluded Race**:
-A race weekend in a Backtest's scope that produced no scores, because it was refused (not a Dry Race), failed, or its data couldn't be loaded. Every Excluded Race is listed with its reason.
+A race weekend in a Backtest's scope that produced no scores, because it was refused (not a Dry Race), failed, its data couldn't be loaded, or its data couldn't be fetched (FastF1's rate limit or a network error that persisted after retrying). Every Excluded Race is listed with its reason, and a fetch failure is distinct from a genuine data-unavailable failure.
 _Avoid_: skipped race, failed race
 
 **Held-out Season**:

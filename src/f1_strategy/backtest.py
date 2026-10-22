@@ -27,9 +27,16 @@ from enum import Enum
 
 from .degradation import DegradationSource
 from .predictor import NotDryRaceError, predict
+from .rate_limit import WAIT_SECONDS_DEFAULT, RateLimitWait, default_wait
 from .scorer import RaceSummary, compare
 from .settings import Settings
 from .weekend import RaceWeekend
+
+try:
+    from fastf1.exceptions import RateLimitExceededError
+except Exception:  # pragma: no cover - FastF1 is a hard dep, this is defensive
+    class RateLimitExceededError(Exception):  # type: ignore[no-redef]
+        """Fallback stand-in when FastF1 isn't importable (never in production)."""
 
 Loader = Callable[[int, str], RaceWeekend]
 Progress = Callable[[str], None]
@@ -78,6 +85,7 @@ class ExclusionReason(Enum):
     NOT_DRY_RACE = "not a Dry Race"
     PREDICTION_FAILED = "prediction failed"
     DATA_UNAVAILABLE = "data unavailable"
+    FETCH_FAILED = "fetch failed (rate limit or network)"
 
 
 @dataclass(frozen=True)
@@ -190,6 +198,8 @@ def run_backtest(
     load: Loader,
     settings: Settings | None = None,
     progress: Progress | None = None,
+    wait: RateLimitWait | None = None,
+    max_rate_limit_retries: int = 2,
 ) -> BacktestResult:
     """Load, predict and compare each race; aggregate into a Backtest Result.
 
@@ -198,15 +208,41 @@ def run_backtest(
     and the remaining races are still scored. Each race is passed to
     `predict()` and `compare()` in isolation, so one race's outcome never
     changes another race's prediction.
+
+    FastF1's ``RateLimitExceededError`` (and any nested one from a past-race
+    load inside the loader) is treated specially: ``wait(seconds, reason)``
+    is called, then the same race is retried up to ``max_rate_limit_retries``
+    times before being excluded with reason ``FETCH_FAILED``. ``wait``
+    defaults to ``rate_limit.default_wait`` (a real ``time.sleep``); tests
+    inject a fake so no test actually sleeps. A warm-cache re-run never
+    triggers ``wait`` because cached FastF1 requests do not count toward
+    the hourly limit.
     """
     settings = settings or Settings()
+    wait = wait if wait is not None else default_wait
     scored: list[RaceResult] = []
     excluded: list[ExcludedRace] = []
     for spec in races:
         if progress is not None:
             progress(f"{spec.season} {spec.event}")
         try:
-            weekend = load(spec.season, spec.event)
+            weekend = _load_with_rate_limit_retry(
+                spec,
+                load=load,
+                wait=wait,
+                progress=progress,
+                max_retries=max_rate_limit_retries,
+            )
+        except RateLimitExceededError as error:
+            excluded.append(
+                ExcludedRace(
+                    season=spec.season,
+                    event=spec.event,
+                    reason=ExclusionReason.FETCH_FAILED,
+                    detail=f"FastF1 rate limit still raised after retrying: {error}",
+                )
+            )
+            continue
         except Exception as error:
             excluded.append(
                 ExcludedRace(
@@ -286,6 +322,38 @@ def run_backtest(
         held_out_season=settings.held_out_season,
         degradation_source_counts=_sum_degradation_sources(scored),
     )
+
+
+def _load_with_rate_limit_retry(
+    spec: RaceSpec,
+    load: Loader,
+    wait: RateLimitWait,
+    progress: Progress | None,
+    max_retries: int,
+) -> RaceWeekend:
+    """Call ``load(spec.season, spec.event)``, waiting out FastF1's rate
+    limit if it is hit. Any ``RateLimitExceededError`` (from the race
+    being loaded, or nested inside a past-race scan for history) triggers
+    ``wait(WAIT_SECONDS_DEFAULT, reason)`` and a retry. After
+    ``max_retries`` further rate-limit raises the exception is re-raised
+    to the caller so it can be recorded as a ``FETCH_FAILED`` Excluded
+    Race.
+    """
+    attempts = 0
+    while True:
+        try:
+            return load(spec.season, spec.event)
+        except RateLimitExceededError as error:
+            if attempts >= max_retries:
+                raise
+            attempts += 1
+            reason = (
+                f"FastF1 rate limit hit while loading "
+                f"{spec.season} {spec.event} ({error})"
+            )
+            if progress is not None:
+                progress(f"{reason}; waiting before retry {attempts}")
+            wait(WAIT_SECONDS_DEFAULT, reason)
 
 
 def _count_degradation_sources(

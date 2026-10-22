@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Category:** bug
 
@@ -30,16 +30,278 @@
 - `ExclusionReason`: gains a reason for "couldn't fetch data (rate limit or network) after retrying", if needed, distinct from `data unavailable`.
 
 **Acceptance criteria:**
-- [ ] With a fake loader that raises FastF1's rate-limit error once and then succeeds, the race is scored, not excluded, and progress output reports the wait
-- [ ] Waiting uses an injectable clock or sleep, so fast tests take no real time
-- [ ] A past race that hits the rate limit is never treated as "no history"
-- [ ] The cause of 2022 Australia's and 2022 Canada's Pit Loss failures is identified and recorded; if it's a Location rename, it joins ticket 16's alias map
-- [ ] A race that still fails after retrying is excluded with a reason that says it was a fetch problem, not missing data
-- [ ] A warm-cache re-run never waits
-- [ ] The README's full-Backtest section explains the rate limit, gives a realistic cold-cache duration, and says the run can be left unattended
-- [ ] Tests go through the Backtest call with a fake loader, plus a slow test for the loader's past-race path where practical
+- [x] With a fake loader that raises FastF1's rate-limit error once and then succeeds, the race is scored, not excluded, and progress output reports the wait
+- [x] Waiting uses an injectable clock or sleep, so fast tests take no real time
+- [x] A past race that hits the rate limit is never treated as "no history"
+- [x] The cause of 2022 Australia's and 2022 Canada's Pit Loss failures is identified and recorded; if it's a Location rename, it joins ticket 16's alias map
+- [x] A race that still fails after retrying is excluded with a reason that says it was a fetch problem, not missing data
+- [x] A warm-cache re-run never waits
+- [x] The README's full-Backtest section explains the rate limit, gives a realistic cold-cache duration, and says the run can be left unattended
+- [x] Tests go through the Backtest call with a fake loader, plus a slow test for the loader's past-race path where practical
 
 **Out of scope:**
 - Raising or bypassing FastF1's rate limit
 - Storing the FastF1 cache somewhere persistent
 - Any model or scoring change
+
+## FastF1 3.8 rate limit, read from its source (2026-10-22)
+
+Read the installed `fastf1==3.8.3` source at
+`.venv/lib/python3.12/site-packages/fastf1/{req,exceptions,logger}.py`
+rather than guessing from behaviour. The exact mechanism:
+
+- `fastf1.req._SessionWithRateLimiting` is a `requests.Session` subclass
+  that patches rate-limit checks into `send()`. Its `_RATE_LIMITS` dict
+  pattern-matches request URLs to a list of limiters. Two limiter
+  classes are in play:
+  - `_MinIntervalLimitDelay(0.25)` — a soft 4 calls/s cap that calls
+    `time.sleep` to space requests. Transparent; no exception.
+  - `_CallsPerIntervalLimitRaise(500, 3600, "any API: 500 calls/h")` —
+    a hard limiter keeping a `collections.deque(maxlen=500)` of request
+    timestamps. On each request it pushes `time.time()`; when the deque
+    is full it checks if `_timestamps[0] > time.time() - interval`
+    (i.e. the oldest of the past 500 is still inside the hour window),
+    and if so raises `RateLimitExceededError(self._info)`.
+- The ergast.com limiter is 200/h; the general-API limiter 500/h applies
+  to every other `https?://.+\..+` URL. Our loader never calls ergast
+  directly, so the 500/h ceiling is what we hit.
+- `RateLimitExceededError` subclasses `FastF1CriticalError`, which
+  subclasses `RuntimeError`. `fastf1.logger.soft_exceptions` — the
+  decorator that normally logs-and-returns-degraded-data from inside
+  `Session.load()` — explicitly re-raises `FastF1CriticalError`. So a
+  rate-limit hit inside `race.load()` **propagates** out instead of
+  turning into a logged warning with partial data. (The ticket brief
+  flagged "FastF1's session loading can also log errors and carry on
+  with partial data" as a possibility — confirmed that this specific
+  error class is exempt.)
+- The sliding window resets as soon as the oldest timestamp in the
+  deque falls out of the past hour. There is no fixed hourly tick —
+  each new request admits one slot an hour after it was first used.
+  The exception carries only the info string, with no "retry-after"
+  figure; one hour from the first of the past 500 calls is the safe
+  upper bound, so the Backtest sleeps 60 min on a hit.
+- **Cached requests do not count.** The shared session class is
+  `_CachedSessionWithRateLimiting(CacheMixin, _SessionWithRateLimiting)`.
+  `requests_cache.CacheMixin` overrides `send()` to serve from cache
+  before delegating, so a cache hit never reaches the parent
+  rate-limiting `send()`. FastF1's own docstring confirms: "Requests
+  that can be served from the cache do not count towards any API rate
+  limits." A warm-cache re-run therefore never trips the limit.
+
+## 2022 Australia and 2022 Canada: real cause (2026-10-22)
+
+Ticket 09's hypothesis is correct: both are rate-limited past-race
+loads that got swallowed, not a Location-rename miss like ticket 16's
+three cases. Evidence gathered by iterating FastF1's event schedule
+2018–2025 under `.cache/fastf1` and grouping each year's Australia and
+Canada rows by `Location`:
+
+| Year | Australia `Location` | Canada `Location` |
+|---|---|---|
+| 2018 | Melbourne | Montréal |
+| 2019 | Melbourne | Montréal |
+| 2020 | — (COVID: no race) | — (COVID: no race) |
+| 2021 | — (COVID: no race) | — (COVID: no race) |
+| 2022 | Melbourne | Montréal |
+| 2023 | Melbourne | Montréal |
+| 2024 | Melbourne | Montréal |
+| 2025 | Melbourne | Montréal |
+
+Both circuits use **one** `Location` string across every season, so no
+alias is needed — this is not another ticket 16 case. The failure
+pattern is instead the loader's `_past_races_at_circuit`:
+
+```python
+try:
+    schedule = fastf1.get_event_schedule(season)
+except Exception:
+    continue
+...
+try:
+    past = fastf1.get_session(season, int(row["RoundNumber"]), "R")
+    past.load(laps=True, telemetry=False, weather=False, messages=False)
+except Exception:
+    continue
+```
+
+A `RateLimitExceededError` is a `RuntimeError`, which `except Exception`
+catches, so a rate-limited 2018 or 2019 past-race load silently became
+"this past race has no data". For Melbourne and Montréal there are
+only two pre-era seasons available (2018, 2019; 2020 and 2021 are
+COVID-cancelled). Once the first of those two was eaten by the rate
+limit the second was also eaten by the next request, leaving zero
+samples — and the loader's "no previous seasons' races at X were
+available" `ValueError` fired. Backtest ticket 02 then mapped that
+`ValueError` to `DATA_UNAVAILABLE`, which is how both races show up as
+"data unavailable: no previous seasons' races at 'Melbourne' /
+'Montréal'" in `2026-10-22_baseline` (commit `2dde6f8`). The fix is to
+let `FastF1CriticalError` propagate from the past-race scan so the
+Backtest's rate-limit retry can see it and wait.
+
+## Implementation notes
+
+**What was built (2026-10-22), test-first.**
+
+- `src/f1_strategy/rate_limit.py` — new module. Holds
+  `WAIT_SECONDS_DEFAULT = 3600.0` (one hour, the sliding window's upper
+  bound; FastF1's error carries no retry-after figure), the
+  `RateLimitWait = Callable[[float, str], None]` type and
+  `default_wait(seconds, reason)` — the real wait that prints a one-line
+  message to stderr naming roughly when it will resume and then
+  `time.sleep`s. The whole module is 60 lines so the design decision
+  (one-hour wait, printed to stderr) is in one place.
+- `src/f1_strategy/backtest.py`:
+  - `run_backtest` gains `wait: RateLimitWait | None = None` and
+    `max_rate_limit_retries: int = 2`. `wait` defaults to
+    `rate_limit.default_wait`; tests inject a fake so no test actually
+    sleeps. Two retries covers almost every real case — in the worst
+    case the Backtest would wait up to three full hours on one race
+    before giving up on it.
+  - New private `_load_with_rate_limit_retry(spec, load, wait,
+    progress, max_retries) -> RaceWeekend`. It calls `load`, catches
+    `RateLimitExceededError`, posts a progress line, calls
+    `wait(WAIT_SECONDS_DEFAULT, reason)` and retries. After
+    `max_retries` further rate-limit hits it re-raises; `run_backtest`
+    then logs an `ExcludedRace` with the new `FETCH_FAILED` reason
+    (distinct from `DATA_UNAVAILABLE`, so a reader can tell a fetch
+    problem from genuine missing data).
+  - New `ExclusionReason.FETCH_FAILED` with human string
+    `"fetch failed (rate limit or network)"`. `backtest_io` reads
+    `ExclusionReason` back by its string value, so saved runs round-
+    trip through this new reason without a format bump.
+  - `RateLimitExceededError` is imported at module scope with a
+    defensive fallback stand-in class, so backtest tests still work in
+    an environment where FastF1 isn't installed.
+- `src/f1_strategy/fastf1_loader.py` — `_past_races_at_circuit` adds
+  explicit `except FastF1CriticalError: raise` ahead of its two
+  catch-all `except Exception` clauses (one around
+  `fastf1.get_event_schedule`, one around `fastf1.get_session` +
+  `past.load`). The rest of the swallow-and-continue behaviour is
+  unchanged, so an ordinary missing-data problem on a past race still
+  looks like "no history for that race" as it did before. Only
+  `FastF1CriticalError` escapes, which is exactly `RateLimitExceededError`
+  under FastF1 3.8.
+- No change to `_measure_pit_loss_and_history`'s outer structure; it
+  passes through the exception the same way `load_weekend` does.
+  `run_backtest`'s retry wrapper sees it either way (from the race
+  being loaded, or from a past-race scan nested inside the loader).
+
+**Tests (all fast, all go through the public call or a fake FastF1).**
+
+- `tests/test_rate_limit.py` — 9 fast tests through `run_backtest` with
+  a fake loader that raises `RateLimitExceededError`:
+  - one-hit-then-success is scored, not excluded, and the wait is
+    recorded
+  - the wait seam is actually called (if it ever gets bypassed and the
+    Backtest really sleeps, the test will take an hour)
+  - progress output mentions "rate" or "wait"
+  - a warm-cache run (loader never raises) never calls `wait`
+  - a persistent rate-limit excludes with `FETCH_FAILED`, not
+    `DATA_UNAVAILABLE`
+  - `format_backtest` shows the `FETCH_FAILED` string
+  - `FETCH_FAILED` round-trips through `save_backtest_result` /
+    `load_backtest_result`
+  - a rate-limit hit on race A does not poison a later race B
+  - the default `wait` is the real `time.sleep` (replaced with a
+    recorder via `monkeypatch`, so the test is still fast)
+- `tests/test_fastf1_loader_rate_limit.py` — 3 fast tests
+  monkeypatching `fastf1.get_event_schedule` and `fastf1.get_session`:
+  - a rate-limit raise from the past-season schedule call propagates
+  - a rate-limit raise from a past-race `.load()` call propagates
+  - a plain `ValueError` from a past-race `.load()` is still swallowed
+    (the loader's existing "treat as no history" behaviour for
+    ordinary missing-data cases)
+- Fast suite: 163 pass (was 151 before this ticket; +12 new tests).
+
+**Real-data check: Smoke Set on this cloud container (2026-10-22).**
+Ran `uv run f1-strategy smoke` on this session's cold cache. All six
+races scored, zero `ExcludedRace`s, including Spain 2022 (pre-era Pit
+Loss) and the sprint, Neutralised and Historical-Degradation paths.
+Singapore 2024 inside the Smoke Set reproduces the ticket 08 known
+scores exactly (top-1 6.5/18, top-3 13.75/18, Stop Window hits 3/20),
+so the retry wrapper and loader changes haven't altered any measured
+race. Did **not** attempt a full cold Backtest in this session — the
+ticket brief said the Smoke Set is enough as a real-data check, and
+the full run belongs on the user's laptop.
+
+**Decisions and alternatives rejected.**
+
+- *Wait a fixed 60 minutes rather than introspect the limiter.*
+  `RateLimitExceededError` carries only the info string "any API: 500
+  calls/h"; the actual deque is on a class attribute inside
+  `fastf1.req._SessionWithRateLimiting._RATE_LIMITS` and reading it is
+  possible but fragile across FastF1 versions. One hour is the sliding
+  window's upper bound, so one wait of 3600 s is always enough; a
+  warm-cache run never waits anyway, so the overshoot only matters on
+  the first full baseline, which the user leaves unattended for ~10 h.
+  Hooking into FastF1's internals to shave a few minutes off the first
+  wait isn't worth the coupling.
+- *Add a new exclusion reason `FETCH_FAILED` instead of reusing
+  `DATA_UNAVAILABLE`.* The ticket explicitly asks for "a clear
+  rate-limit or network reason, distinct from genuine 'data
+  unavailable'". A reader needs to tell the two apart: a `FETCH_FAILED`
+  race is worth retrying on a warm cache, while a `DATA_UNAVAILABLE`
+  race is probably permanently missing. Saved results round-trip the
+  new value through `backtest_io` because `ExclusionReason` is read
+  back by its string, so no format bump is needed.
+- *Make the retry count injectable instead of hard-coded.* With
+  `max_rate_limit_retries=2`, a persistent 1-h outage would delay the
+  Backtest by three hours before giving up on one race. Zero retries
+  (keep today's behaviour) was rejected because the whole point of the
+  ticket is to retry rather than exclude. More than two was rejected
+  because at ten per race the user couldn't tell "network is really
+  down" from "sliding window is weird"; two is the knee of the curve.
+- *Catch `FastF1CriticalError` in the backtest wrapper instead of only
+  `RateLimitExceededError`.* The only `FastF1CriticalError` FastF1
+  itself raises today is `RateLimitExceededError`, and treating a
+  future unknown critical error as "wait an hour and retry" would
+  mask the problem. Narrower is better here.
+- *Keep the loader's two `except Exception: continue` clauses as-is
+  and let the Backtest wrapper handle the rate limit at a higher
+  level.* Rejected because the rate-limit raise happens inside
+  `load_weekend`, which calls `_past_races_at_circuit`, which already
+  catches `Exception` on each past race. Without an explicit
+  `except FastF1CriticalError: raise` in the loader the Backtest never
+  sees the error at all — this was exactly the 2022 Australia / Canada
+  bug.
+- *A separate per-race retry decorator vs. a method on `run_backtest`.*
+  Kept it as a module-private helper `_load_with_rate_limit_retry`
+  called from the per-race loop. A decorator would need to carry the
+  `wait`, `progress` and `max_retries` state through the loader
+  signature, which the ticket's "injectable wait" criterion wants
+  routed only through the Backtest call.
+
+**Deviations from the ticket / spec.** None material. The ticket is a
+bug fix and the spec didn't speak about rate limiting; nothing in
+`spec.md` changed.
+
+**Open questions, known limitations and follow-ups.**
+
+- *Ergast's 200/h limit.* The current code never calls ergast
+  directly, so the general 500/h limiter is the only one that fires
+  in a Backtest. If a later ticket uses ergast (e.g. for championship
+  context), the same retry wrapper covers it because `fastf1.req` wraps
+  ergast under its own limiter and raises the same exception class.
+- *The 60-min wait is per rate-limit raise, not per hour.* If a run
+  hits the limit twice in quick succession (unlikely — once the hour
+  has passed, 500 fresh slots are available), the second wait is
+  another full hour. Acceptable for an unattended cold run; a smarter
+  limiter-introspection could trim this. Follow-up only if a user ever
+  reports a double-wait.
+- *A real cold-cache end-to-end Backtest is not run from this cloud
+  session.* Ticket 09 is the right place for that, on the user's
+  laptop where the cache persists. The README now gives a realistic
+  ~10 h figure for the first full run so the user knows what to
+  expect.
+- *`FETCH_FAILED` is deliberately distinct from `DATA_UNAVAILABLE`,
+  but Backtest Results from before this ticket predate the enum
+  value.* Not a concern for ticket 09's baseline (removed from
+  `results/backtest/` per ticket 09's comment thread); any older run
+  in the branch's history simply doesn't have `FETCH_FAILED` entries,
+  which is correct.
+
+**Review feedback for the user.** The real-data check that lands this
+ticket is the Smoke Set, not a full baseline. Re-run ticket 09's
+baseline on the laptop next; the README now says it will take ~10 h on
+a cold cache, left unattended, and the Backtest reports the wait on
+stderr while it is sleeping.

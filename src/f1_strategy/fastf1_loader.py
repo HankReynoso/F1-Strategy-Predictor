@@ -14,6 +14,7 @@ from typing import Iterable
 
 import fastf1
 import pandas as pd
+from fastf1.exceptions import FastF1CriticalError
 
 from .backtest import RaceSpec
 from .location_aliases import location_group
@@ -450,6 +451,13 @@ def _past_races_at_circuit(
     for season in range(min_season, race_season):
         try:
             schedule = fastf1.get_event_schedule(season)
+        except FastF1CriticalError:
+            # FastF1's rate limit (and any other critical FastF1 error) must
+            # propagate so the Backtest can wait and retry instead of
+            # silently treating this past season as "no history" — the bug
+            # that excluded 2022 Australia / Canada in the first baseline
+            # attempt (ticket 17).
+            raise
         except Exception:
             continue
         matches = schedule[schedule["Location"].isin(circuit_group)]
@@ -461,6 +469,10 @@ def _past_races_at_circuit(
                     # FastF1's `load` logs and continues when the live-timing
                     # API refuses the data (e.g. older seasons behind a 403).
                     continue
+            except FastF1CriticalError:
+                # Same rule as above: a rate-limit hit on a past race must
+                # not look like "this past race genuinely has no data".
+                raise
             except Exception:
                 continue
             weight = 0.5 ** (race_season - season - 1)
