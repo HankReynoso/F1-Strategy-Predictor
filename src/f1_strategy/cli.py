@@ -25,10 +25,12 @@ import sys
 from collections.abc import Callable, Sequence
 
 from .backtest import RaceSpec, format_backtest, run_backtest
+from .backtest_compare import compare_backtest_results, format_comparison
 from .backtest_io import (
     RunMetadata,
     default_run_at,
     detect_code_version,
+    load_backtest_result,
     save_backtest_result,
 )
 from .predictor import NotDryRaceError, predict
@@ -49,6 +51,8 @@ def main(
     argv = list(argv) if argv is not None else sys.argv[1:]
     if argv and argv[0] == "backtest":
         return _run_backtest_mode(argv[1:], load=load, list_season=list_season)
+    if argv and argv[0] == "compare":
+        return _run_compare_mode(argv[1:])
     return _run_single_race(argv, load=load)
 
 
@@ -163,6 +167,33 @@ def _run_backtest_mode(
             f"  {paths.data}\n  {paths.summary}",
             file=sys.stderr,
         )
+    return 0
+
+
+def _run_compare_mode(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="f1-strategy compare",
+        description=(
+            "Compare two saved Backtest Results: show the before, after and "
+            "change for every headline score and breakdown, the biggest-"
+            "moving races in each direction, and any scope warnings."
+        ),
+    )
+    parser.add_argument("before", help="path to the earlier Backtest Result JSON")
+    parser.add_argument("after", help="path to the later Backtest Result JSON")
+    args = parser.parse_args(argv)
+
+    before_result, before_md = load_backtest_result(args.before)
+    after_result, after_md = load_backtest_result(args.after)
+    comparison = compare_backtest_results(
+        before_result,
+        after_result,
+        before_metadata=before_md,
+        after_metadata=after_md,
+    )
+    print(f"Comparing {before_md.label!r} → {after_md.label!r}")
+    print()
+    print(format_comparison(comparison))
     return 0
 
 

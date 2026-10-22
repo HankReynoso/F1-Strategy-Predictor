@@ -9,6 +9,16 @@ from .backtest import (
     format_backtest,
     run_backtest,
 )
+from .backtest_compare import (
+    AveragedBucketDiff,
+    AveragedChange,
+    BacktestComparison,
+    RaceMovement,
+    ScoreBucketDiff,
+    ScoreChange,
+    compare_backtest_results,
+    format_comparison,
+)
 from .backtest_io import (
     RunMetadata,
     SavedPaths,
@@ -49,6 +59,9 @@ from .weekend import (
 
 __all__ = [
     "ActualStrategy",
+    "AveragedBucketDiff",
+    "AveragedChange",
+    "BacktestComparison",
     "BacktestResult",
     "CandidateStrategy",
     "Compound",
@@ -65,6 +78,7 @@ __all__ = [
     "PreRaceInfo",
     "RaceAveraged",
     "RaceComparison",
+    "RaceMovement",
     "RaceOutcome",
     "RaceResult",
     "RaceSpec",
@@ -73,6 +87,8 @@ __all__ = [
     "RemainingSetsRule",
     "RunMetadata",
     "SavedPaths",
+    "ScoreBucketDiff",
+    "ScoreChange",
     "ScoreTotals",
     "Session",
     "Settings",
@@ -80,9 +96,11 @@ __all__ = [
     "Strategy",
     "StrategyPrediction",
     "compare",
+    "compare_backtest_results",
     "default_run_at",
     "detect_code_version",
     "format_backtest",
+    "format_comparison",
     "load_backtest_result",
     "predict",
     "run_backtest",
