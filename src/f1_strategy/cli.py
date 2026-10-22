@@ -24,7 +24,7 @@ import argparse
 import sys
 from collections.abc import Callable, Sequence
 
-from .backtest import RaceSpec, format_backtest, run_backtest
+from .backtest import SMOKE_SET, RaceSpec, format_backtest, run_backtest
 from .backtest_compare import compare_backtest_results, format_comparison
 from .backtest_io import (
     RunMetadata,
@@ -51,6 +51,8 @@ def main(
     argv = list(argv) if argv is not None else sys.argv[1:]
     if argv and argv[0] == "backtest":
         return _run_backtest_mode(argv[1:], load=load, list_season=list_season)
+    if argv and argv[0] == "smoke":
+        return _run_smoke_mode(argv[1:], load=load)
     if argv and argv[0] == "compare":
         return _run_compare_mode(argv[1:])
     return _run_single_race(argv, load=load)
@@ -167,6 +169,34 @@ def _run_backtest_mode(
             f"  {paths.data}\n  {paths.summary}",
             file=sys.stderr,
         )
+    return 0
+
+
+def _run_smoke_mode(argv: Sequence[str], load: Loader | None) -> int:
+    """Run the Smoke Set and print its Backtest Result without saving it."""
+    parser = argparse.ArgumentParser(
+        prog="f1-strategy smoke",
+        description=(
+            "Run the Smoke Set: a small fixed set of races covering every "
+            "path through the model (Singapore, Monza, Baku, Austin and "
+            "Jeddah 2024, plus Hungary 2022). Prints the Backtest Result "
+            "without saving it."
+        ),
+    )
+    parser.parse_args(argv)
+
+    if load is None:
+        load = _fastf1_load()
+
+    def progress(label: str) -> None:
+        print(f"  {label}", file=sys.stderr, flush=True)
+
+    settings = Settings()
+    print(
+        f"Smoke Set over {len(SMOKE_SET)} race weekend(s)", file=sys.stderr
+    )
+    result = run_backtest(SMOKE_SET, load=load, settings=settings, progress=progress)
+    print(format_backtest(result))
     return 0
 
 

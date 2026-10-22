@@ -44,6 +44,34 @@ class RaceSpec:
     is_sprint_weekend: bool = False
 
 
+# The Smoke Set: a small fixed set of races covering every path through the
+# model, run as a quick Backtest in a cloud session to check nothing broke.
+# One race per path:
+#   - Singapore 2024: reference race (ticket 08 known scores: top-1 6.5/18,
+#     top-3 13.75/18, Stop Window hits 3/20).
+#   - Monza 2024: Historical Degradation path (field-level same-era history).
+#   - Baku 2024: used-set fallback path.
+#   - Austin 2024: sprint weekend (thinner practice data).
+#   - Jeddah 2024: Neutralised Race path.
+#   - Spain 2022: conventional, green 2022 Dry Race with no same-era history,
+#     so Pit Loss falls back to pre-era seasons (ADR-0004 exception, ticket 03).
+#     Picked because the Barcelona (`Catalunya`) circuit has clean 2018-2021
+#     history under one FastF1 `Location` string (no alias needed), and the
+#     2022 Spanish GP was green and dry (no Safety Car or VSC), so the race
+#     exercises the pre-era Pit Loss path without becoming an Excluded Race
+#     or landing in the Neutralised Races bucket. Hungary 2022 was tried
+#     first but ran as a Neutralised Race under FastF1's TrackStatus, so was
+#     swapped out for Spain.
+SMOKE_SET: tuple[RaceSpec, ...] = (
+    RaceSpec(2024, "Singapore Grand Prix"),
+    RaceSpec(2024, "Italian Grand Prix"),
+    RaceSpec(2024, "Azerbaijan Grand Prix"),
+    RaceSpec(2024, "United States Grand Prix", is_sprint_weekend=True),
+    RaceSpec(2024, "Saudi Arabian Grand Prix"),
+    RaceSpec(2022, "Spanish Grand Prix"),
+)
+
+
 class ExclusionReason(Enum):
     """Why a race in the Backtest's scope produced no scores."""
 

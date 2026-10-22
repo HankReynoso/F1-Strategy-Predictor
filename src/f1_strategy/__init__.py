@@ -1,4 +1,5 @@
 from .backtest import (
+    SMOKE_SET,
     BacktestResult,
     ExcludedRace,
     ExclusionReason,
@@ -89,6 +90,7 @@ __all__ = [
     "SavedPaths",
     "ScoreBucketDiff",
     "ScoreChange",
+    "SMOKE_SET",
     "ScoreTotals",
     "Session",
     "Settings",

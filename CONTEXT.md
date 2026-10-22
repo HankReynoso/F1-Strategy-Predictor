@@ -117,7 +117,7 @@ The season whose races are never used to tune settings, so its Backtest score sh
 _Avoid_: test set, validation season
 
 **Smoke Set**:
-A small fixed set of races covering every path through the model, run as a quick Backtest to check nothing broke: Singapore, Monza, Baku, Austin and Jeddah 2024, plus one 2022 race.
+A small fixed set of races covering every path through the model, run as a quick Backtest to check nothing broke: Singapore, Monza, Baku, Austin and Jeddah 2024, plus Spain 2022 (the conventional, green pre-era Pit Loss path, ADR-0004 exception).
 _Avoid_: sample races, quick set
 
 **Backtest Result**:

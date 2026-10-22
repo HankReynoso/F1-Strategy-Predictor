@@ -13,6 +13,7 @@ import pytest
 from weekend_builder import TEAMS, standard_practice, weekend
 
 from f1_strategy import (
+    SMOKE_SET,
     BacktestResult,
     Compound,
     ExcludedRace,
@@ -342,6 +343,53 @@ def test_command_backtest_mode_runs_chosen_seasons_and_prints_result(capsys):
     # Progress goes to stderr so a pipe never sees a half report.
     assert "Alpha GP" in captured.err
     assert "Beta GP" in captured.err
+
+
+def test_smoke_set_covers_the_six_documented_paths():
+    """The Smoke Set names the six races the spec and CONTEXT.md call out."""
+    assert len(SMOKE_SET) == 6
+    assert (2024, "Singapore Grand Prix") in {(r.season, r.event) for r in SMOKE_SET}
+    assert (2024, "Italian Grand Prix") in {(r.season, r.event) for r in SMOKE_SET}
+    assert (2024, "Azerbaijan Grand Prix") in {(r.season, r.event) for r in SMOKE_SET}
+    assert (2024, "United States Grand Prix") in {(r.season, r.event) for r in SMOKE_SET}
+    assert (2024, "Saudi Arabian Grand Prix") in {(r.season, r.event) for r in SMOKE_SET}
+    # Exactly one 2022 race, conventional, picked for the pre-era Pit Loss path.
+    two_thousand_twenty_two = [r for r in SMOKE_SET if r.season == 2022]
+    assert len(two_thousand_twenty_two) == 1
+    assert two_thousand_twenty_two[0].is_sprint_weekend is False
+
+
+def test_command_smoke_mode_runs_the_smoke_set_and_prints_result(capsys):
+    """`smoke` runs every SMOKE_SET race through the injected loader."""
+    weekends = {(r.season, r.event): green_weekend() for r in SMOKE_SET}
+
+    def load(season, event):
+        return weekends[(season, event)]
+
+    exit_code = main(["smoke"], load=load)
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert f"Races scored: {len(SMOKE_SET)}" in captured.out
+    assert "Top-1 Strategy Match" in captured.out
+    # Progress names each race on stderr so a pipe never sees a half report.
+    for spec in SMOKE_SET:
+        assert spec.event in captured.err
+
+
+def test_command_smoke_mode_does_not_save(tmp_path, capsys):
+    """A Smoke Set run prints the Backtest Result but writes no files."""
+    weekends = {(r.season, r.event): green_weekend() for r in SMOKE_SET}
+
+    def load(season, event):
+        return weekends[(season, event)]
+
+    exit_code = main(["smoke"], load=load)
+    assert exit_code == 0
+    # No results-dir was given and smoke mode doesn't accept one; nothing is
+    # written anywhere. (If it ever did, the test suite's working dir would
+    # be a bad place for it.)
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_command_single_race_mode_is_unchanged(capsys):
