@@ -16,6 +16,7 @@ import fastf1
 import pandas as pd
 
 from .backtest import RaceSpec
+from .location_aliases import location_group
 from .pit_lane_table import estimated_pit_loss, pit_lane_entry
 from .regulation_era import PIT_LOSS_PRE_ERA_MIN_SEASON, era_start
 from .weekend import (
@@ -434,6 +435,12 @@ def _past_races_at_circuit(
     `race_season - 1`).
     """
     fastf1.Cache.enable_cache(str(cache_dir))
+    # Cross-season Location aliases: FastF1 occasionally renames a venue
+    # between seasons (e.g. Monte Carlo → Monaco in 2022, Miami → Miami
+    # Gardens in 2025). The alias group lists every string that refers to
+    # the same physical venue, so earlier seasons under the old name are
+    # still matched (ticket 16).
+    circuit_group = location_group(circuit)
     # (median_loss_for_race, weight, past season)
     pit_weighted: list[tuple[float, float, int]] = []
     # Per Compound: list of (per-stint rate, lap count, weight, past season)
@@ -445,7 +452,7 @@ def _past_races_at_circuit(
             schedule = fastf1.get_event_schedule(season)
         except Exception:
             continue
-        matches = schedule[schedule["Location"] == circuit]
+        matches = schedule[schedule["Location"].isin(circuit_group)]
         for _, row in matches.iterrows():
             try:
                 past = fastf1.get_session(season, int(row["RoundNumber"]), "R")

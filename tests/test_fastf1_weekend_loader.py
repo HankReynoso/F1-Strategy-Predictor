@@ -228,6 +228,55 @@ def test_list_season_2024_marks_sprint_weekends() -> None:
     assert len([s for s in specs if not s.is_sprint_weekend]) == 18
 
 
+def test_monaco_2022_pit_loss_comes_from_monte_carlo_pre_era() -> None:
+    # Ticket 16: FastF1 renamed the Monaco venue from "Monte Carlo" (2018,
+    # 2019, 2021) to "Monaco" (2022+). Monaco 2022 has no same-era race at
+    # Location "Monaco", and before the alias map it fell into ticket 07's
+    # estimated-Pit-Loss path (and in fact raised, because Monaco has no
+    # pit lane table entry). With the alias group, Monaco 2022's pre-era
+    # fallback finds 2018, 2019 and 2021 "Monte Carlo" races and the Pit
+    # Loss is measured, not estimated.
+    weekend = load_weekend(2022, "Monaco Grand Prix", cache_dir=CACHE_DIR)
+    assert weekend.pre_race.circuit == "Monaco"
+    assert weekend.pre_race.estimated_pit_loss is False
+    seasons = weekend.pre_race.pit_loss_seasons
+    assert seasons, "aliased Monte Carlo pre-era races should supply Pit Loss"
+    assert all(2018 <= s <= 2021 for s in seasons), seasons
+    assert 10.0 < weekend.pre_race.pit_loss < 40.0
+
+
+def test_marina_bay_2022_pit_loss_comes_from_singapore_pre_era() -> None:
+    # Ticket 16: FastF1 renamed the Singapore venue from "Singapore" (2018,
+    # 2019) to "Marina Bay" (2022+). Marina Bay 2022 has no same-era race
+    # at Location "Marina Bay", and before the alias map it fell into
+    # ticket 07's estimated-Pit-Loss path with no table entry. With the
+    # alias group, the pre-era fallback finds 2018 and 2019 "Singapore"
+    # races and the Pit Loss is measured.
+    weekend = load_weekend(2022, "Singapore Grand Prix", cache_dir=CACHE_DIR)
+    assert weekend.pre_race.circuit == "Marina Bay"
+    assert weekend.pre_race.estimated_pit_loss is False
+    seasons = weekend.pre_race.pit_loss_seasons
+    assert seasons, "aliased Singapore pre-era races should supply Pit Loss"
+    assert all(2018 <= s <= 2021 for s in seasons), seasons
+    assert 10.0 < weekend.pre_race.pit_loss < 40.0
+
+
+def test_miami_gardens_2025_pit_loss_comes_from_miami_same_era() -> None:
+    # Ticket 16: FastF1 renamed the Miami venue from "Miami" (2022–2024) to
+    # "Miami Gardens" (2025). Miami Gardens 2025 has no same-era race at
+    # Location "Miami Gardens", and before the alias map it fell into
+    # ticket 07's estimated-Pit-Loss path (which does list "Miami"). With
+    # the alias group, the same-era pass finds 2022, 2023 and 2024 Miami
+    # races and the Pit Loss is measured, not estimated.
+    weekend = load_weekend(2025, "Miami Grand Prix", cache_dir=CACHE_DIR)
+    assert weekend.pre_race.circuit == "Miami Gardens"
+    assert weekend.pre_race.estimated_pit_loss is False
+    seasons = weekend.pre_race.pit_loss_seasons
+    assert set(seasons) <= {2022, 2023, 2024}, seasons
+    assert seasons, "aliased Miami same-era races should supply Pit Loss"
+    assert 10.0 < weekend.pre_race.pit_loss < 40.0
+
+
 def test_repeat_loads_come_from_the_local_cache(
     monza_2024: RaceWeekend, monkeypatch: pytest.MonkeyPatch
 ) -> None:
