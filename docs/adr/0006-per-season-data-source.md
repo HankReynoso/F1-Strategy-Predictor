@@ -1,0 +1,26 @@
+# Per-season data source: OpenF1 for 2023 onward, FastF1 for 2022 and earlier
+
+Weekend data is loaded from OpenF1 for the 2023 season onward and from FastF1 for 2022 and earlier seasons. The choice is made per season inside the loader, behind the existing `load_weekend` / `list_season` seam, so callers see one weekend description shape and can't tell which source a race came from. We did this because, since mid-October 2026, F1's live-timing archive returns HTTP 401 to unauthenticated clients and FastF1's mirror only serves 2021–2022, so on a cold cache every 2023+ race fails with `DataNotLoadedError` ([ticket 09](../../.scratch/full-backtest/issues/09-first-full-backtest-baseline.md) second attempt). OpenF1 is the one unauthenticated path that covers 2023–2025, and the ticket 18 findings ([`openf1-findings.md`](../../.scratch/full-backtest/openf1-findings.md)) showed every field the current weekend description uses is reachable through it, with modest derivation.
+
+OpenF1 covers 2023 onward only (its `/v1/meetings` returns zero rows for 2018–2022), so 2022 keeps FastF1. The FastF1 mirror still serves 2022, so this part of the choice is not forced by the archive outage.
+
+## Licence constraint
+
+OpenF1 is licensed [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/): non-commercial, share-alike, attribution encouraged but not required. This is accepted for the project as it stands: a personal, educational predictor built from publicly observable race data. The constraint is to revisit if any of that changes: distributing predictions commercially, or re-publishing OpenF1 responses in a form that triggers the share-alike clause, would need a separate licence from OpenF1 or a different source. FastF1 is MIT-licensed and raises no equivalent constraint; the mixed-source policy means the project's weekend data is only usable within the stricter of the two licences, which is OpenF1's.
+
+## Pre-era Pit Loss hole, 2018–2020
+
+[ADR-0004](0004-history-within-regulation-era.md) lets Pit Loss draw on pre-era seasons when a 2022 circuit has no same-era race to measure from. That exception depended on being able to load 2018–2020 races through FastF1. Those seasons can no longer be downloaded today without an F1 TV subscription, and OpenF1 doesn't cover them at all. Five 2022 first-time-of-the-era circuits are affected: Australia, Canada, Belgium, Singapore and Japan. For these, Pit Loss falls back to the hand-maintained pit-lane-table estimate from [ticket 07](../../.scratch/full-backtest/issues/07-estimated-pit-loss-first-time-circuits.md), flagged as estimated (ticket 25 extends the table to cover them). Miami 2022 and Las Vegas 2023, the circuits ticket 07 already covered, are unaffected. From 2023 onward every race has at least 2022 same-era history, so the pre-era exception doesn't fire and the hole doesn't widen.
+
+Borrowing Pit Loss from a later season at the same circuit (e.g. using 2023 Australia for 2022 Australia) was considered and rejected: a 2022 prediction would then read data from a race that happened after it, which leaks future information into a past prediction and would silently corrupt the Backtest's score for that race.
+
+## Mixed-source history for one weekend
+
+A race's history for Historical Degradation and for Pit Loss spans several past seasons, which can straddle the 2022/2023 boundary. The router loads each past season from its own source — 2022 from FastF1, 2023 and later from OpenF1 — and the resulting lists of Stints and pit-loss samples are merged by the same code that merges single-source history today. The weekend description shape (`PreRaceInfo`, `RaceOutcome`, `Lap`, `Stint`, `NeutralisationPeriod`) is identical across sources; the only visible difference is `tyre_set` ids, which already differ across sessions today ([ADR-0002](0002-remaining-sets-count-new-only.md)) and are only used for same-stint uniqueness. The season router that implements this split lives in ticket 23.
+
+## Considered Options
+
+- **Wait for a FastF1 fix without authentication**: rejected. FastF1 issue [#978](https://github.com/theOehrly/Fast-F1/issues/978) is open with no unauthenticated workaround on the roadmap; the maintainer's fix is the F1 TV path below. Waiting leaves the Backtest unable to run on 2023+ for an unknown duration.
+- **FastF1 3.9 with F1 TV authentication**: rejected for now, kept as a reversible future option. FastF1 `3.9.0a0` (shipped 2026-10-18) adds F1 TV authentication, which needs a paid F1 TV Access subscription. If that subscription is acquired later, FastF1 becomes a single source of truth again across all seasons the project cares about, the loader seam makes the per-season routing reversible, and the mixed-licence constraint above falls away. Not adopted now because the brief ruled paid data sources out of scope and the project runs on free data today.
+- **OpenF1 for every season, including 2022**: rejected because OpenF1 doesn't cover 2022 at all. Even once/if it did, keeping FastF1 for 2022 avoids re-validating one more season's data under a new source for no gain.
+- **Borrow Pit Loss from a later same-circuit race for 2022 first-time circuits**: rejected as above — it leaks future information into a past prediction.

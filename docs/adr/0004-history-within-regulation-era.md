@@ -6,6 +6,8 @@ Anything drawn from previous seasons (Historical Degradation, Pit Loss, and late
 
 Pit Loss may draw on races from before the Regulation Era when the circuit has no same-era race to measure from. It depends mostly on the pit lane (its length and speed limit), not on the cars, so the reason for the era rule doesn't apply. Without this exception, every race in the first season of an era (all of 2022) would be an Excluded Race. Rare pit lane changes are ignored for now.
 
+Since mid-October 2026 the 2018–2020 seasons can no longer be downloaded without an F1 TV subscription, and OpenF1 doesn't cover them, so this exception can't actually fire for the 2022 circuits whose only pre-era history is 2018–2019. See [ADR-0006](0006-per-season-data-source.md) for the per-season data-source policy and the pit-lane-table fallback that covers those five circuits.
+
 ## Considered Options
 
 - **Pool every season from 2022 on**: rejected because 2026 tyres and cars behave differently, and the error would be silent.
