@@ -6,34 +6,60 @@ plain, project-owned :class:`.weekend.RaceWeekend` that the predictor
 reads, mirroring :mod:`.fastf1_loader` field for field. Routing between
 the two loaders by season lives in ticket 23.
 
-Ticket 21 covers the pre-race side only: ``PreRaceInfo`` plus one
-``Session`` per pre-race session (FP1--FP3 for a conventional weekend;
-FP1, Sprint Qualifying, Sprint and Qualifying for a sprint weekend)
-with its ``Lap`` tuple. The race outcome (``RaceOutcome.stints``,
-``neutralisations``, ``finishing_status``), Pit Loss and Historical
-Degradation are ticket 22. Pre-race information already needs
-``race_laps`` (it is a ``PreRaceInfo`` field, read before the race),
-so this module fetches it from ``/v1/session_result`` for the race
-session; everything else about the race is left to ticket 22.
+Ticket 21 covers the pre-race side: ``PreRaceInfo`` plus one ``Session``
+per pre-race session, with ``Lap`` tuples. Ticket 22 adds the race
+outcome (``RaceOutcome.stints``, ``neutralisations``,
+``finishing_status``), measured Pit Loss and Historical Degradation.
+
+Pit Loss and Historical Degradation here read **only** OpenF1 seasons
+(2023 and later). A 2024 race finds Monza 2023 by itself; a 2023 race
+has no OpenF1 history at all. Combining a 2022 FastF1 sample with the
+OpenF1 samples for a 2024 race is ticket 23's job: :func:`load_past_race_samples`
+is the public seam ticket 23 calls per past OpenF1 season to collect raw
+pit-loss and stint-rate samples, then merges them with the FastF1
+loader's parallel helper under one season-weighted aggregation.
 
 Field-by-field recipes verified against real OpenF1 responses in
-``.scratch/full-backtest/openf1-findings.md``.
+``.scratch/full-backtest/openf1-findings.md``. Pit Loss never uses
+``/v1/pit.pit_duration`` because that field counts red-flag parking as
+a pit stop (observed mean 661 s at São Paulo 2024); the lap-time
+algorithm from :mod:`.fastf1_loader._pit_losses_in` is ported here on
+top of the race-control-reconstructed neutralisation ranges.
 """
 
 from __future__ import annotations
 
+import logging
+import math
+import statistics
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Protocol
 
+from .location_aliases import location_group
 from .openf1_client import OpenF1Client
+from .regulation_era import era_start
 from .weekend import (
+    DRY_COMPOUNDS,
     Compound,
+    HistoricalDegradation,
     Lap,
+    NeutralisationPeriod,
     PreRaceInfo,
     RaceOutcome,
     RaceWeekend,
     Session,
+    Stint,
 )
+
+
+_LOGGER = logging.getLogger(__name__)
+
+# OpenF1's historical coverage begins in 2023 (ADR-0006; `/v1/meetings`
+# returns zero rows for 2018-2022). A past-race scan from this loader
+# will not even try to fetch earlier seasons; crossing the boundary is
+# ticket 23's job.
+OPENF1_FIRST_SEASON = 2023
 
 
 _COMPOUND = {
@@ -85,6 +111,8 @@ def load_weekend(
     *,
     client: _OpenF1Client | None = None,
     cache_dir: str | Path = ".cache/openf1",
+    fuel_effect_s_per_lap: float = 0.03,
+    history_min_stint_length: int = 4,
 ) -> RaceWeekend:
     """Load an OpenF1 race weekend into the project's weekend description.
 
@@ -99,12 +127,13 @@ def load_weekend(
     built; tests inject a fixture-backed fake instead so no test touches
     the network.
 
-    The returned ``RaceWeekend``'s ``race`` is an empty ``RaceOutcome``
-    and its ``pre_race.pit_loss`` is 0.0 with empty ``pit_loss_seasons``
-    — ticket 22 fills those in from past races, matching
-    ``fastf1_loader``'s approach. ``PreRaceInfo.race_laps`` is populated
-    now because it is pre-race information the predictor reads before
-    the race.
+    Pit Loss and Historical Degradation are measured from past OpenF1
+    seasons only (2023+). A 2024 race reads 2023; a 2023 race has no
+    OpenF1 history and gets ``pit_loss=0.0`` / empty
+    ``historical_degradation``, which ticket 23 is expected to replace
+    by merging in 2022 FastF1 samples. ``fuel_effect_s_per_lap`` and
+    ``history_min_stint_length`` match the FastF1 loader's defaults so
+    rates are directly comparable across sources.
     """
     if client is None:
         client = OpenF1Client(cache_dir=Path(cache_dir))
@@ -133,8 +162,28 @@ def load_weekend(
         for s in _ordered_pre_race_sessions(sessions_meta)
     )
 
-    race_laps = _race_laps_count(client, race_meta["session_key"])
+    race_session_key = int(race_meta["session_key"])
+    race_rows = _load_race_rows(client, race_session_key)
+    race_laps = _race_laps_count(race_rows["session_result"], race_session_key)
+    neutralisations, _warnings = _neutralisation_periods(
+        race_rows["race_control"], race_laps
+    )
+    neutralised_laps = _neutralised_lap_set(neutralisations)
+    stints = _race_stints(
+        race_rows["stints"], tla_by_num=tla_by_num, drivers=set(teams)
+    )
+    finishing_status = _finishing_status(
+        race_rows["session_result"], tla_by_num=tla_by_num, drivers=set(teams)
+    )
+
     circuit = str(meeting["location"])
+    pit_loss, pit_loss_seasons, historical_degradation = _past_races_at_circuit(
+        circuit=circuit,
+        race_season=season,
+        client=client,
+        fuel_effect_s_per_lap=fuel_effect_s_per_lap,
+        history_min_stint_length=history_min_stint_length,
+    )
 
     return RaceWeekend(
         pre_race=PreRaceInfo(
@@ -144,13 +193,16 @@ def load_weekend(
             is_sprint_weekend=is_sprint,
             sessions=pre_race_sessions,
             teams=teams,
-            # Ticket 22 computes real Pit Loss and Historical Degradation
-            # from past races; a 0.0 placeholder keeps the type intact.
-            pit_loss=0.0,
-            pit_loss_seasons=(),
+            pit_loss=pit_loss,
+            pit_loss_seasons=pit_loss_seasons,
             estimated_pit_loss=False,
+            historical_degradation=historical_degradation,
         ),
-        race=RaceOutcome(),
+        race=RaceOutcome(
+            stints=stints,
+            neutralisations=neutralisations,
+            finishing_status=finishing_status,
+        ),
     )
 
 
@@ -432,20 +484,581 @@ def _stint_for_lap(driver_stints: Iterable[dict], lap_number: int) -> dict | Non
 # ---------------------------------------------------------------------------
 
 
-def _race_laps_count(client: _OpenF1Client, race_session_key: int) -> int:
+def _race_laps_count(result: list[dict], race_session_key: int) -> int:
     """The race's scheduled lap count, from the winner's ``number_of_laps``.
 
-    OpenF1's ``/v1/session_result`` gives one row per driver with their
-    completed lap count. Taking the max across the result set equals the
-    winner's lap count (DNFs have fewer laps), which equals the race's
-    scheduled lap count unless the race is red-flagged short — a case
-    the FastF1 loader (reading ``race.total_laps``) also inherits
-    whichever way F1 recorded the shortened length.
+    Reads ``/v1/session_result`` rows (one per driver), taking the max
+    ``number_of_laps``. Equals the winner's lap count (DNFs have fewer),
+    which equals the race's scheduled lap count unless the race is
+    red-flagged short — a case the FastF1 loader (reading
+    ``race.total_laps``) also inherits whichever way F1 recorded the
+    shortened length.
     """
-    result = client.get("session_result", session_key=race_session_key)
     if not result:
         raise ValueError(
             f"OpenF1 /v1/session_result returned no rows for race session "
             f"{race_session_key!r}; cannot derive race_laps"
         )
-    return max(int(row["number_of_laps"]) for row in result)
+    laps = [row.get("number_of_laps") for row in result]
+    valid = [int(x) for x in laps if x is not None]
+    if not valid:
+        raise ValueError(
+            f"OpenF1 /v1/session_result rows for race session "
+            f"{race_session_key!r} carry no number_of_laps"
+        )
+    return max(valid)
+
+
+# ---------------------------------------------------------------------------
+# Race-side loader (ticket 22).
+# ---------------------------------------------------------------------------
+
+
+def _load_race_rows(
+    client: _OpenF1Client, race_session_key: int
+) -> dict[str, list[dict]]:
+    """Fetch the four race-session endpoints the race-side builders read.
+
+    One shared fetch keeps request budgeting predictable: four endpoints
+    per weekend's race session, cached by the client. Kept separate from
+    ``_load_past_race_rows`` so the target weekend fetch and the past-
+    season scan have independent request shapes.
+    """
+    return {
+        "laps": client.get("laps", session_key=race_session_key),
+        "stints": client.get("stints", session_key=race_session_key),
+        "pit": client.get("pit", session_key=race_session_key),
+        "race_control": client.get("race_control", session_key=race_session_key),
+        "session_result": client.get(
+            "session_result", session_key=race_session_key
+        ),
+    }
+
+
+def _race_stints(
+    stints_rows: list[dict], *, tla_by_num: dict[int, str], drivers: set[str]
+) -> tuple[Stint, ...]:
+    """Group OpenF1 stint rows into ``Stint`` tuples, keyed on TLA.
+
+    Mirrors :func:`.fastf1_loader._race_stints`: one ``Stint`` per
+    ``/v1/stints`` row whose compound is a known value, keyed on TLA
+    rather than driver number so the race outcome's shape matches the
+    FastF1 loader exactly. Non-dry compounds (INTERMEDIATE, WET) are
+    kept — the FastF1 loader keeps them too; downstream code (``predict``,
+    the Dry Race filter) rejects a wet race based on the stint list.
+    Rows for drivers not in ``drivers`` (DNS, dropped from the starter
+    set) are skipped so a stint for a driver who did not start the race
+    doesn't surface.
+    """
+    out: list[Stint] = []
+    for row in stints_rows:
+        driver_num = int(row["driver_number"])
+        tla = tla_by_num.get(driver_num)
+        if tla is None or tla not in drivers:
+            continue
+        compound = _COMPOUND.get(str(row.get("compound", "")).upper())
+        if compound is None:
+            continue
+        out.append(
+            Stint(
+                driver=tla,
+                compound=compound,
+                start_lap=int(row["lap_start"]),
+                end_lap=int(row["lap_end"]),
+            )
+        )
+    out.sort(key=lambda s: (s.driver, s.start_lap))
+    return tuple(out)
+
+
+def _finishing_status(
+    result_rows: list[dict],
+    *,
+    tla_by_num: dict[int, str],
+    drivers: set[str],
+) -> dict[str, bool]:
+    """``took_flag = not dnf and not dns and not dsq`` per starter.
+
+    OpenF1 flags DNFs, DNSs and DSQs with explicit booleans on
+    ``/v1/session_result``, so finishing status is the negation of the
+    disjunction. Matches :func:`.fastf1_loader._finishing_status`'s
+    "lapped finishers took the flag" semantics (lapped finishers have
+    ``dnf=False`` on OpenF1 too). Rows for drivers not in ``drivers``
+    are ignored so a reserve driver who appears only on
+    ``/v1/session_result`` isn't added to the starter-indexed dict.
+    """
+    out: dict[str, bool] = {}
+    for row in result_rows:
+        driver_num = int(row["driver_number"])
+        tla = tla_by_num.get(driver_num)
+        if tla is None or tla not in drivers:
+            continue
+        dnf = bool(row.get("dnf", False))
+        dns = bool(row.get("dns", False))
+        dsq = bool(row.get("dsq", False))
+        out[tla] = not (dnf or dns or dsq)
+    return out
+
+
+# -- Neutralisation reconstruction -----------------------------------------
+
+
+# `/v1/race_control.message` substrings that start or end a VSC or SC
+# period. Matched case-insensitively. Red flag is deliberately not here:
+# the FastF1 loader's `_lap_neutralisation_kind` ignores red flag (code
+# 5) too, and ADR-0004 doesn't class red-flag laps as neutralised.
+_VSC_START = "VIRTUAL SAFETY CAR DEPLOYED"
+_VSC_END = "VIRTUAL SAFETY CAR ENDING"
+_SC_START = "SAFETY CAR DEPLOYED"
+_SC_END = "SAFETY CAR IN THIS LAP"
+
+
+def _neutralisation_periods(
+    race_control_rows: list[dict], race_laps: int
+) -> tuple[tuple[NeutralisationPeriod, ...], tuple[str, ...]]:
+    """Reconstruct SC/VSC periods from ``/v1/race_control`` events.
+
+    OpenF1 has no per-lap TrackStatus, so neutralisation ranges are
+    rebuilt from the start / end messages the findings table pins:
+    ``VIRTUAL SAFETY CAR DEPLOYED`` opens a VSC that
+    ``VIRTUAL SAFETY CAR ENDING`` closes on the same ``lap_number``;
+    ``SAFETY CAR DEPLOYED`` opens an SC that ``SAFETY CAR IN THIS LAP``
+    closes on its own ``lap_number`` (the "in this lap" message fires
+    on the lap the SC comes in, which is the last lap of the period).
+
+    If an "end" event is missing (a known gap in OpenF1's feed), the
+    period is capped at the race lap count and a quality warning is
+    returned. Returned warnings are also logged at WARNING level so the
+    Backtest's output carries them without needing to pass the tuple
+    through to the caller.
+
+    Returns ``(periods, warnings)``. Both are tuples in event order,
+    merged into the shape ``RaceOutcome.neutralisations`` already
+    carries (``NeutralisationPeriod(kind, start_lap, end_lap)``).
+    """
+    periods: list[NeutralisationPeriod] = []
+    warnings: list[str] = []
+    open_vsc_lap: int | None = None
+    open_sc_lap: int | None = None
+
+    for row in race_control_rows:
+        message = str(row.get("message", "")).upper()
+        lap = row.get("lap_number")
+        if lap is None:
+            continue
+        lap_num = int(lap)
+        if _VSC_START in message:
+            open_vsc_lap = lap_num
+        elif _VSC_END in message:
+            if open_vsc_lap is not None:
+                periods.append(
+                    NeutralisationPeriod("VSC", open_vsc_lap, lap_num)
+                )
+                open_vsc_lap = None
+        elif _SC_START in message:
+            open_sc_lap = lap_num
+        elif _SC_END in message:
+            if open_sc_lap is not None:
+                periods.append(NeutralisationPeriod("SC", open_sc_lap, lap_num))
+                open_sc_lap = None
+
+    if open_vsc_lap is not None:
+        warning = (
+            f"VSC deployed on lap {open_vsc_lap} has no ending event; "
+            f"capped at race lap count {race_laps}"
+        )
+        _LOGGER.warning(warning)
+        warnings.append(warning)
+        periods.append(NeutralisationPeriod("VSC", open_vsc_lap, race_laps))
+    if open_sc_lap is not None:
+        warning = (
+            f"SC deployed on lap {open_sc_lap} has no ending event; "
+            f"capped at race lap count {race_laps}"
+        )
+        _LOGGER.warning(warning)
+        warnings.append(warning)
+        periods.append(NeutralisationPeriod("SC", open_sc_lap, race_laps))
+
+    periods.sort(key=lambda p: (p.start_lap, p.end_lap))
+    return tuple(periods), tuple(warnings)
+
+
+def _neutralised_lap_set(
+    periods: Iterable[NeutralisationPeriod],
+) -> set[int]:
+    """Lap numbers inside any SC or VSC period, as a set for O(1) tests."""
+    out: set[int] = set()
+    for period in periods:
+        out.update(range(period.start_lap, period.end_lap + 1))
+    return out
+
+
+# -- Pit Loss and Historical Degradation samples ----------------------------
+
+
+@dataclass(frozen=True)
+class PastRaceSamples:
+    """Raw samples from one past OpenF1 race.
+
+    The seam ticket 23 reads to merge FastF1 and OpenF1 past-race data
+    under one season-weighted aggregation. Each entry is a single
+    sample: a per-stop pit-loss in seconds, or a (compound, fuel-
+    corrected rate, lap count) tuple. The samples are already filtered
+    for green-flag running and the clip ranges from the FastF1 loader;
+    the merger only has to apply the recent-seasons weight
+    ``0.5 ** (gap - 1)`` and the lap-count × season-weight weighted
+    mean (same formulas as :func:`.fastf1_loader._past_races_at_circuit`).
+    """
+
+    pit_losses: tuple[float, ...]
+    stint_rates: tuple[tuple[Compound, float, int], ...]
+
+
+def _pit_losses_in(
+    laps_rows: list[dict],
+    pit_rows: list[dict],
+    neutralised_laps: set[int],
+) -> Iterable[float]:
+    """Per-pit-stop time loss from one race's OpenF1 rows, in seconds.
+
+    Ports :func:`.fastf1_loader._pit_losses_in`:
+
+    - Reference pace per driver is the median ``lap_duration`` of green
+      racing laps that aren't pit-in, pit-out, lap 1 or neutralised.
+    - At least 5 clean reference laps are required (same as FastF1).
+    - For each ``/v1/pit`` row, pair the in-lap (that ``lap_number``)
+      with the next lap as the out-lap. Both must be non-neutralised and
+      have non-null ``lap_duration``. ``is_pit_out_lap`` on the out-lap
+      is a free sanity check.
+    - Loss is ``(in_lap - ref) + (out_lap - ref)``, clipped to
+      ``10 < loss < 60`` (the FastF1 loader's clip).
+
+    Deliberately **never** reads ``/v1/pit.pit_duration``: that field
+    counts red-flag parking as a pit stop (findings, mean 661 s at
+    São Paulo 2024). The lap-time algorithm doesn't need it.
+    """
+    laps_by_driver: dict[int, list[dict]] = {}
+    for row in laps_rows:
+        laps_by_driver.setdefault(int(row["driver_number"]), []).append(row)
+    pits_by_driver: dict[int, list[int]] = {}
+    for row in pit_rows:
+        pits_by_driver.setdefault(int(row["driver_number"]), []).append(
+            int(row["lap_number"])
+        )
+
+    for driver_num, laps in laps_by_driver.items():
+        laps_sorted = sorted(laps, key=lambda r: int(r["lap_number"]))
+        pit_in_laps = set(pits_by_driver.get(driver_num, []))
+        by_lap: dict[int, dict] = {int(r["lap_number"]): r for r in laps_sorted}
+
+        clean_times: list[float] = []
+        for row in laps_sorted:
+            lap_num = int(row["lap_number"])
+            if lap_num <= 1:
+                continue
+            if lap_num in pit_in_laps:
+                continue
+            if bool(row.get("is_pit_out_lap", False)):
+                continue
+            if lap_num in neutralised_laps:
+                continue
+            duration = row.get("lap_duration")
+            if duration is None:
+                continue
+            clean_times.append(float(duration))
+        if len(clean_times) < 5:
+            continue
+        ref = statistics.median(clean_times)
+        if not math.isfinite(ref):
+            continue
+
+        for pit_lap in sorted(pit_in_laps):
+            in_row = by_lap.get(pit_lap)
+            out_row = by_lap.get(pit_lap + 1)
+            if in_row is None or out_row is None:
+                continue
+            if pit_lap in neutralised_laps or (pit_lap + 1) in neutralised_laps:
+                continue
+            in_time = in_row.get("lap_duration")
+            out_time = out_row.get("lap_duration")
+            if in_time is None or out_time is None:
+                continue
+            loss = (float(in_time) - ref) + (float(out_time) - ref)
+            if 10.0 < loss < 60.0:
+                yield loss
+
+
+def _historical_stint_rates(
+    laps_rows: list[dict],
+    stints_rows: list[dict],
+    pit_rows: list[dict],
+    neutralised_laps: set[int],
+    fuel_effect_s_per_lap: float,
+    min_stint_length: int,
+) -> Iterable[tuple[Compound, float, int]]:
+    """Per-Stint fuel-corrected Degradation rates from one OpenF1 race.
+
+    Ports :func:`.fastf1_loader._historical_stint_rates`. For each stint
+    whose compound is dry, pick out the laps in its range from
+    ``laps_rows``, drop any that are pit-in (``lap_number`` in
+    ``/v1/pit``), pit-out (``is_pit_out_lap``), neutralised, or missing
+    ``lap_duration``. Keep the longest run of strictly consecutive
+    tyre-age values and fit a least-squares slope; add the fuel effect
+    and yield ``(compound, rate, lap_count)``. Non-dry compounds
+    (INTERMEDIATE, WET) are skipped: the FastF1 helper only yields dry
+    rates too, since Historical Degradation is a dry-Compound concept.
+    """
+    laps_by_driver: dict[int, dict[int, dict]] = {}
+    for row in laps_rows:
+        laps_by_driver.setdefault(int(row["driver_number"]), {})[
+            int(row["lap_number"])
+        ] = row
+    pits_by_driver: dict[int, set[int]] = {}
+    for row in pit_rows:
+        pits_by_driver.setdefault(int(row["driver_number"]), set()).add(
+            int(row["lap_number"])
+        )
+
+    for stint in stints_rows:
+        driver_num = int(stint["driver_number"])
+        compound = _COMPOUND.get(str(stint.get("compound", "")).upper())
+        if compound is None or compound not in DRY_COMPOUNDS:
+            continue
+        start = int(stint["lap_start"])
+        end = int(stint["lap_end"])
+        age_at_start = int(stint.get("tyre_age_at_start", 0))
+        driver_laps = laps_by_driver.get(driver_num, {})
+        pit_in_laps = pits_by_driver.get(driver_num, set())
+
+        clean: list[tuple[int, float]] = []
+        for lap_num in range(start, end + 1):
+            row = driver_laps.get(lap_num)
+            if row is None:
+                continue
+            if lap_num in pit_in_laps:
+                continue
+            if bool(row.get("is_pit_out_lap", False)):
+                continue
+            if lap_num in neutralised_laps:
+                continue
+            duration = row.get("lap_duration")
+            if duration is None:
+                continue
+            tyre_age = (lap_num - start) + 1 + age_at_start
+            clean.append((tyre_age, float(duration)))
+        if len(clean) < min_stint_length:
+            continue
+        consecutive = _longest_consecutive(clean)
+        if len(consecutive) < min_stint_length:
+            continue
+        rate = _slope(consecutive)
+        if rate is None:
+            continue
+        yield compound, rate + fuel_effect_s_per_lap, len(consecutive)
+
+
+def _longest_consecutive(
+    points: list[tuple[int, float]],
+) -> list[tuple[int, float]]:
+    """Longest sub-sequence of ``(tyre_age, lap_time)`` whose tyre_age
+    increases by exactly 1 each step. Ties keep the first.
+
+    Same shape as :func:`.fastf1_loader._longest_consecutive`.
+    """
+    best: list[tuple[int, float]] = []
+    current: list[tuple[int, float]] = []
+    last_age: int | None = None
+    for age, time in points:
+        if last_age is not None and age == last_age + 1:
+            current.append((age, time))
+        else:
+            current = [(age, time)]
+        if len(current) > len(best):
+            best = list(current)
+        last_age = age
+    return best
+
+
+def _slope(points: list[tuple[int, float]]) -> float | None:
+    """Least-squares slope of lap time against tyre age. ``None`` if the
+    ages don't vary. Same shape as :func:`.fastf1_loader._slope`."""
+    mean_x = statistics.fmean(x for x, _ in points)
+    mean_y = statistics.fmean(y for _, y in points)
+    sxy = sum((x - mean_x) * (y - mean_y) for x, y in points)
+    sxx = sum((x - mean_x) ** 2 for x, _ in points)
+    if sxx <= 0:
+        return None
+    return sxy / sxx
+
+
+# -- Past-race aggregation -------------------------------------------------
+
+
+def load_past_race_samples(
+    client: _OpenF1Client,
+    season: int,
+    event: str,
+    *,
+    fuel_effect_s_per_lap: float = 0.03,
+    history_min_stint_length: int = 4,
+) -> PastRaceSamples:
+    """Collect raw Pit Loss and Historical Degradation samples from one
+    past OpenF1 race, ready for the ticket 23 cross-source merger.
+
+    Resolves the past race's meeting the same way :func:`load_weekend`
+    does (``_find_meeting`` on ``event``, race session on the matched
+    meeting), fetches the three endpoints the sample functions read
+    (``/v1/laps``, ``/v1/stints``, ``/v1/pit``) plus ``/v1/race_control``
+    for green-flag filtering, and returns a :class:`PastRaceSamples`.
+
+    This is the public seam ticket 23 pairs with a parallel FastF1
+    helper: the router iterates over past seasons, calls this for the
+    OpenF1 branch and the FastF1 equivalent for the FastF1 branch, then
+    applies the same per-season weighting
+    (``0.5 ** (race_season - season - 1)``) and lap-count × season-
+    weight weighted mean already used in
+    :func:`.fastf1_loader._past_races_at_circuit`.
+    """
+    rows = _load_past_race_rows(client, season, event)
+    if rows is None:
+        return PastRaceSamples(pit_losses=(), stint_rates=())
+    race_laps_count = _race_laps_count(
+        rows["session_result"], rows["session_key"]
+    )
+    periods, _warnings = _neutralisation_periods(
+        rows["race_control"], race_laps_count
+    )
+    neutralised = _neutralised_lap_set(periods)
+    losses = tuple(
+        _pit_losses_in(rows["laps"], rows["pit"], neutralised)
+    )
+    rates = tuple(
+        _historical_stint_rates(
+            rows["laps"],
+            rows["stints"],
+            rows["pit"],
+            neutralised,
+            fuel_effect_s_per_lap,
+            history_min_stint_length,
+        )
+    )
+    return PastRaceSamples(pit_losses=losses, stint_rates=rates)
+
+
+def _load_past_race_rows(
+    client: _OpenF1Client, season: int, event: str
+) -> dict[str, Any] | None:
+    """Fetch the row sets needed to measure Pit Loss and Historical
+    Degradation from one past OpenF1 race. ``None`` when no OpenF1
+    meeting matches (e.g. a 2022 race, outside OpenF1's coverage, which
+    ticket 23 will route to FastF1 instead).
+
+    The past-race scan reads the same four race-session endpoints as
+    the target weekend, plus ``/v1/session_result`` for the race lap
+    count that caps a missing SC/VSC "end" event.
+    """
+    try:
+        meetings = client.get("meetings", year=season)
+    except Exception:
+        return None
+    try:
+        meeting = _find_meeting(meetings, event)
+    except ValueError:
+        return None
+    sessions_meta = client.get("sessions", meeting_key=meeting["meeting_key"])
+    try:
+        race_meta = _session_named(sessions_meta, "Race")
+    except ValueError:
+        return None
+    race_session_key = int(race_meta["session_key"])
+    return {
+        "session_key": race_session_key,
+        "laps": client.get("laps", session_key=race_session_key),
+        "stints": client.get("stints", session_key=race_session_key),
+        "pit": client.get("pit", session_key=race_session_key),
+        "race_control": client.get(
+            "race_control", session_key=race_session_key
+        ),
+        "session_result": client.get(
+            "session_result", session_key=race_session_key
+        ),
+    }
+
+
+def _past_races_at_circuit(
+    *,
+    circuit: str,
+    race_season: int,
+    client: _OpenF1Client,
+    fuel_effect_s_per_lap: float,
+    history_min_stint_length: int,
+) -> tuple[float, tuple[int, ...], dict[Compound, HistoricalDegradation]]:
+    """Load each previous OpenF1 season's race at the circuit and read
+    both Pit Loss and Historical Degradation from it.
+
+    Mirrors :func:`.fastf1_loader._past_races_at_circuit`'s shape: the
+    same ``0.5 ** (gap - 1)`` recent-seasons weight for Pit Loss, the
+    same lap-count × season-weight weighted mean for Historical
+    Degradation, same alias group for cross-year venue renames (ticket
+    16). The one difference is the season range: OpenF1 starts at 2023,
+    and seasons < 2023 are not scanned here (ticket 23 adds the FastF1
+    branch for them).
+
+    An empty past-season range (a 2023 race, where
+    ``[max(era_start, 2023), 2023) == []``) returns
+    ``(0.0, (), {})``. Not an error: ticket 23's merger will add the
+    2022 FastF1 samples for that case.
+    """
+    min_season = max(era_start(race_season), OPENF1_FIRST_SEASON)
+    circuit_aliases = location_group(circuit)
+    pit_weighted: list[tuple[float, float, int]] = []
+    hist_samples: dict[Compound, list[tuple[float, int, float, int]]] = {
+        c: [] for c in DRY_COMPOUNDS
+    }
+    for season in range(min_season, race_season):
+        for alias in sorted(circuit_aliases):
+            try:
+                samples = load_past_race_samples(
+                    client,
+                    season,
+                    alias,
+                    fuel_effect_s_per_lap=fuel_effect_s_per_lap,
+                    history_min_stint_length=history_min_stint_length,
+                )
+            except Exception:
+                continue
+            if not samples.pit_losses and not samples.stint_rates:
+                continue
+            weight = 0.5 ** (race_season - season - 1)
+            losses = sorted(samples.pit_losses)
+            if losses:
+                pit_weighted.append(
+                    (losses[len(losses) // 2], weight, season)
+                )
+            for compound, rate, lap_count in samples.stint_rates:
+                hist_samples[compound].append(
+                    (rate, lap_count, weight, season)
+                )
+
+    if not pit_weighted:
+        pit_loss: float = 0.0
+        pit_loss_seasons: tuple[int, ...] = ()
+    else:
+        total_weight = sum(w for _, w, _ in pit_weighted)
+        pit_loss = sum(m * w for m, w, _ in pit_weighted) / total_weight
+        pit_loss_seasons = tuple(sorted({s for _, _, s in pit_weighted}))
+
+    historical_degradation: dict[Compound, HistoricalDegradation] = {}
+    for compound, samples_list in hist_samples.items():
+        if not samples_list:
+            continue
+        weights = [n * w for _, n, w, _ in samples_list]
+        total = sum(weights)
+        rate = sum(r * x for (r, _, _, _), x in zip(samples_list, weights)) / total
+        seasons_used = tuple(sorted({s for _, _, _, s in samples_list}))
+        historical_degradation[compound] = HistoricalDegradation(
+            rate=rate,
+            seasons=seasons_used,
+            stint_count=len(samples_list),
+        )
+    return pit_loss, pit_loss_seasons, historical_degradation

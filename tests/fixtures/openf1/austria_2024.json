@@ -6,6 +6,7 @@
     {"meeting_key": 1239, "meeting_name": "Austrian Grand Prix", "location": "Spielberg", "country_name": "Austria", "date_start": "2024-06-28T11:30:00+00:00"},
     {"meeting_key": 1244, "meeting_name": "Italian Grand Prix", "location": "Monza", "country_name": "Italy", "date_start": "2024-08-30T11:30:00+00:00"}
   ],
+  "meetings?year=2023": [],
   "sessions?meeting_key=1239": [
     {"session_key": 9547, "session_name": "Practice 1", "meeting_key": 1239, "date_start": "2024-06-28T11:30:00+00:00"},
     {"session_key": 9548, "session_name": "Sprint Qualifying", "meeting_key": 1239, "date_start": "2024-06-28T15:00:00+00:00"},
@@ -58,5 +59,21 @@
   "stints?session_key=9551": [
     {"driver_number": 1, "stint_number": 1, "compound": "SOFT", "lap_start": 1, "lap_end": 2, "tyre_age_at_start": 0}
   ],
-  "pit?session_key=9551": []
+  "pit?session_key=9551": [],
+
+  "laps?session_key=9550": [
+    {"driver_number": 1, "lap_number": 1, "lap_duration": null, "is_pit_out_lap": false},
+    {"driver_number": 1, "lap_number": 2, "lap_duration": 72.0, "is_pit_out_lap": false}
+  ],
+  "stints?session_key=9550": [
+    {"driver_number": 1, "stint_number": 1, "compound": "MEDIUM", "lap_start": 1, "lap_end": 24, "tyre_age_at_start": 0},
+    {"driver_number": 1, "stint_number": 2, "compound": "HARD", "lap_start": 25, "lap_end": 71, "tyre_age_at_start": 0}
+  ],
+  "pit?session_key=9550": [
+    {"driver_number": 1, "lap_number": 24, "pit_duration": 22.8}
+  ],
+  "race_control?session_key=9550": [
+    {"category": "SafetyCar", "flag": null, "message": "VIRTUAL SAFETY CAR DEPLOYED", "lap_number": 66},
+    {"category": "SafetyCar", "flag": null, "message": "VIRTUAL SAFETY CAR ENDING", "lap_number": 66}
+  ]
 }

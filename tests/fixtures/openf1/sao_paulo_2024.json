@@ -1,0 +1,59 @@
+{
+  "_about": "Recorded OpenF1 responses for São Paulo GP 2024 (Interlagos, meeting_key=1249, race session_key=9636), trimmed for ticket 22's race_control reconstruction, DNF/DNS/DSQ handling and the `pit_duration`-pollution finding. Real event sequence: VSC on lap 28, SC on lap 30, red flag on lap 32, SC again laps 39-42. race_control rows are the real messages observed on 2026-10-23; a `pit_duration` of 650 s on one row pins that _pit_losses_in never reads that field. session_result captures Sainz DNF, Colapinto DNF, Albon DNS, Stroll DNS, Hülkenberg DSQ.",
+  "meetings?year=2024": [
+    {"meeting_key": 1249, "meeting_name": "São Paulo Grand Prix", "location": "São Paulo", "country_name": "Brazil", "date_start": "2024-11-01T15:30:00+00:00"}
+  ],
+  "meetings?year=2023": [],
+  "sessions?meeting_key=1249": [
+    {"session_key": 9630, "session_name": "Practice 1", "meeting_key": 1249, "date_start": "2024-11-01T15:30:00+00:00"},
+    {"session_key": 9631, "session_name": "Sprint Qualifying", "meeting_key": 1249, "date_start": "2024-11-01T19:30:00+00:00"},
+    {"session_key": 9632, "session_name": "Sprint", "meeting_key": 1249, "date_start": "2024-11-02T14:00:00+00:00"},
+    {"session_key": 9634, "session_name": "Qualifying", "meeting_key": 1249, "date_start": "2024-11-03T06:30:00+00:00"},
+    {"session_key": 9636, "session_name": "Race", "meeting_key": 1249, "date_start": "2024-11-03T15:30:00+00:00"}
+  ],
+  "drivers?session_key=9636": [
+    {"driver_number": 1, "name_acronym": "VER", "full_name": "Max Verstappen", "team_name": "Red Bull Racing"},
+    {"driver_number": 55, "name_acronym": "SAI", "full_name": "Carlos Sainz", "team_name": "Ferrari"},
+    {"driver_number": 43, "name_acronym": "COL", "full_name": "Franco Colapinto", "team_name": "Williams"},
+    {"driver_number": 23, "name_acronym": "ALB", "full_name": "Alexander Albon", "team_name": "Williams"},
+    {"driver_number": 18, "name_acronym": "STR", "full_name": "Lance Stroll", "team_name": "Aston Martin"},
+    {"driver_number": 27, "name_acronym": "HUL", "full_name": "Nico Hülkenberg", "team_name": "Kick Sauber"}
+  ],
+  "starting_grid?session_key=9634": [
+    {"driver_number": 1, "position": 1},
+    {"driver_number": 55, "position": 2},
+    {"driver_number": 23, "position": 3},
+    {"driver_number": 18, "position": 4},
+    {"driver_number": 43, "position": 5},
+    {"driver_number": 27, "position": 6}
+  ],
+  "session_result?session_key=9636": [
+    {"driver_number": 1, "position": 1, "number_of_laps": 69, "dnf": false, "dns": false, "dsq": false, "gap_to_leader": 0},
+    {"driver_number": 55, "position": 20, "number_of_laps": 32, "dnf": true, "dns": false, "dsq": false, "gap_to_leader": null},
+    {"driver_number": 43, "position": 19, "number_of_laps": 29, "dnf": true, "dns": false, "dsq": false, "gap_to_leader": null},
+    {"driver_number": 23, "position": null, "number_of_laps": 0, "dnf": false, "dns": true, "dsq": false, "gap_to_leader": null},
+    {"driver_number": 18, "position": null, "number_of_laps": 0, "dnf": false, "dns": true, "dsq": false, "gap_to_leader": null},
+    {"driver_number": 27, "position": null, "number_of_laps": 69, "dnf": false, "dns": false, "dsq": true, "gap_to_leader": null}
+  ],
+  "race_control?session_key=9636": [
+    {"category": "SafetyCar", "flag": null, "message": "VIRTUAL SAFETY CAR DEPLOYED", "lap_number": 28},
+    {"category": "SafetyCar", "flag": null, "message": "VIRTUAL SAFETY CAR ENDING", "lap_number": 28},
+    {"category": "SafetyCar", "flag": null, "message": "SAFETY CAR DEPLOYED", "lap_number": 30},
+    {"category": "SafetyCar", "flag": null, "message": "SAFETY CAR IN THIS LAP", "lap_number": 31},
+    {"category": "Flag", "flag": "RED", "message": "RED FLAG", "lap_number": 32},
+    {"category": "SafetyCar", "flag": null, "message": "SAFETY CAR DEPLOYED", "lap_number": 39},
+    {"category": "SafetyCar", "flag": null, "message": "SAFETY CAR IN THIS LAP", "lap_number": 42}
+  ],
+  "stints?session_key=9636": [
+    {"driver_number": 1, "stint_number": 1, "compound": "MEDIUM", "lap_start": 1, "lap_end": 29, "tyre_age_at_start": 0},
+    {"driver_number": 1, "stint_number": 2, "compound": "HARD", "lap_start": 30, "lap_end": 69, "tyre_age_at_start": 0}
+  ],
+  "pit?session_key=9636": [
+    {"driver_number": 1, "lap_number": 29, "pit_duration": 23.5},
+    {"driver_number": 1, "lap_number": 32, "pit_duration": 650.0}
+  ],
+  "laps?session_key=9636": [
+    {"driver_number": 1, "lap_number": 1, "lap_duration": null, "is_pit_out_lap": false},
+    {"driver_number": 1, "lap_number": 2, "lap_duration": 82.0, "is_pit_out_lap": false}
+  ]
+}

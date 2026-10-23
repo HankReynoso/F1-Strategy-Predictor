@@ -172,18 +172,26 @@ def test_race_session_is_never_in_pre_race(monza_weekend):
         assert session.name != "Race"
 
 
-def test_race_outcome_is_empty_in_ticket_21_scope(monza_weekend):
-    """Ticket 22 fills the race side; ticket 21 leaves it empty."""
-    assert monza_weekend.race.stints == ()
+def test_race_outcome_is_populated_in_ticket_22_scope(monza_weekend):
+    """Ticket 22 fills the race side: stints, neutralisations (empty
+    for green Monza 2024) and finishing_status all come from OpenF1."""
+    # Both VER and LEC's race stints are present, keyed on TLA.
+    stint_drivers = {s.driver for s in monza_weekend.race.stints}
+    assert stint_drivers == {"VER", "LEC"}
+    # Monza 2024 ran green — no SC/VSC period, but the field is a tuple.
     assert monza_weekend.race.neutralisations == ()
-    assert monza_weekend.race.finishing_status == {}
+    # Both drivers took the flag.
+    assert monza_weekend.race.finishing_status == {"VER": True, "LEC": True}
 
 
-def test_pit_loss_is_a_placeholder_in_ticket_21_scope(monza_weekend):
-    """Pit Loss is ticket 22; keep the field typed but at a zero
-    placeholder so the shape mirrors FastF1 loader exactly."""
-    assert monza_weekend.pre_race.pit_loss == 0.0
-    assert monza_weekend.pre_race.pit_loss_seasons == ()
+def test_pit_loss_is_measured_from_past_openf1_seasons(monza_weekend):
+    """Pit Loss and the seasons that contributed come from the past
+    OpenF1 race(s) at the same circuit. For Monza 2024 the fixture
+    carries one 2023 Monza race, so pit_loss_seasons is exactly
+    (2023,) and the measured value is in the usual Pit Loss range."""
+    assert monza_weekend.pre_race.pit_loss > 10.0
+    assert monza_weekend.pre_race.pit_loss < 60.0
+    assert monza_weekend.pre_race.pit_loss_seasons == (2023,)
     assert monza_weekend.pre_race.estimated_pit_loss is False
 
 
