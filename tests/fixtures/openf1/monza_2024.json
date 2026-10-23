@@ -1,0 +1,74 @@
+{
+  "_about": "Recorded OpenF1 responses for Italian GP 2024 (Monza, meeting_key=1244), trimmed to two drivers (VER #1, LEC #16) and the minimum lap/stint/pit rows the ticket 21 tests need. See .scratch/full-backtest/openf1-findings.md for how each field maps to the real API.",
+  "meetings?year=2024": [
+    {"meeting_key": 1000, "meeting_name": "Pre-Season Testing", "location": "Sakhir", "country_name": "Bahrain", "date_start": "2024-02-21T07:00:00+00:00"},
+    {"meeting_key": 1229, "meeting_name": "Bahrain Grand Prix", "location": "Sakhir", "country_name": "Bahrain", "date_start": "2024-03-02T12:30:00+00:00"},
+    {"meeting_key": 1239, "meeting_name": "Austrian Grand Prix", "location": "Spielberg", "country_name": "Austria", "date_start": "2024-06-28T11:30:00+00:00"},
+    {"meeting_key": 1244, "meeting_name": "Italian Grand Prix", "location": "Monza", "country_name": "Italy", "date_start": "2024-08-30T11:30:00+00:00"}
+  ],
+  "sessions?meeting_key=1244": [
+    {"session_key": 9581, "session_name": "Practice 1", "meeting_key": 1244, "date_start": "2024-08-30T11:30:00+00:00"},
+    {"session_key": 9582, "session_name": "Practice 2", "meeting_key": 1244, "date_start": "2024-08-30T15:00:00+00:00"},
+    {"session_key": 9583, "session_name": "Practice 3", "meeting_key": 1244, "date_start": "2024-08-31T10:30:00+00:00"},
+    {"session_key": 9586, "session_name": "Qualifying", "meeting_key": 1244, "date_start": "2024-08-31T14:00:00+00:00"},
+    {"session_key": 9590, "session_name": "Race", "meeting_key": 1244, "date_start": "2024-09-01T13:00:00+00:00"}
+  ],
+  "drivers?session_key=9590": [
+    {"driver_number": 1, "name_acronym": "VER", "full_name": "Max Verstappen", "team_name": "Red Bull Racing"},
+    {"driver_number": 16, "name_acronym": "LEC", "full_name": "Charles Leclerc", "team_name": "Ferrari"}
+  ],
+  "starting_grid?session_key=9586": [
+    {"driver_number": 16, "position": 1},
+    {"driver_number": 1, "position": 7}
+  ],
+  "session_result?session_key=9590": [
+    {"driver_number": 16, "position": 1, "number_of_laps": 53, "dnf": false, "dns": false, "dsq": false, "gap_to_leader": 0},
+    {"driver_number": 1, "position": 6, "number_of_laps": 53, "dnf": false, "dns": false, "dsq": false, "gap_to_leader": 37.6}
+  ],
+  "laps?session_key=9581": [
+    {"driver_number": 1, "lap_number": 1, "lap_duration": null, "is_pit_out_lap": true},
+    {"driver_number": 1, "lap_number": 2, "lap_duration": 85.5, "is_pit_out_lap": false},
+    {"driver_number": 1, "lap_number": 3, "lap_duration": 83.2, "is_pit_out_lap": false},
+    {"driver_number": 1, "lap_number": 4, "lap_duration": null, "is_pit_out_lap": false},
+    {"driver_number": 1, "lap_number": 5, "lap_duration": 85.0, "is_pit_out_lap": true},
+    {"driver_number": 1, "lap_number": 6, "lap_duration": 82.5, "is_pit_out_lap": false},
+    {"driver_number": 16, "lap_number": 1, "lap_duration": null, "is_pit_out_lap": true},
+    {"driver_number": 16, "lap_number": 2, "lap_duration": 86.1, "is_pit_out_lap": false},
+    {"driver_number": 16, "lap_number": 99, "lap_duration": 90.0, "is_pit_out_lap": false}
+  ],
+  "stints?session_key=9581": [
+    {"driver_number": 1, "stint_number": 1, "compound": "SOFT", "lap_start": 1, "lap_end": 4, "tyre_age_at_start": 0},
+    {"driver_number": 1, "stint_number": 2, "compound": "SOFT", "lap_start": 5, "lap_end": 6, "tyre_age_at_start": 5},
+    {"driver_number": 16, "stint_number": 1, "compound": "MEDIUM", "lap_start": 1, "lap_end": 2, "tyre_age_at_start": 0}
+  ],
+  "pit?session_key=9581": [
+    {"driver_number": 1, "lap_number": 4, "pit_duration": 62.3}
+  ],
+  "laps?session_key=9582": [
+    {"driver_number": 1, "lap_number": 1, "lap_duration": 83.9, "is_pit_out_lap": true},
+    {"driver_number": 1, "lap_number": 2, "lap_duration": 82.8, "is_pit_out_lap": false}
+  ],
+  "stints?session_key=9582": [
+    {"driver_number": 1, "stint_number": 1, "compound": "HARD", "lap_start": 1, "lap_end": 2, "tyre_age_at_start": 0}
+  ],
+  "pit?session_key=9582": [],
+  "laps?session_key=9583": [
+    {"driver_number": 16, "lap_number": 1, "lap_duration": 84.0, "is_pit_out_lap": true},
+    {"driver_number": 16, "lap_number": 2, "lap_duration": 82.0, "is_pit_out_lap": false}
+  ],
+  "stints?session_key=9583": [
+    {"driver_number": 16, "stint_number": 1, "compound": "MEDIUM", "lap_start": 1, "lap_end": 2, "tyre_age_at_start": 0}
+  ],
+  "pit?session_key=9583": [],
+  "laps?session_key=9586": [
+    {"driver_number": 1, "lap_number": 1, "lap_duration": 85.0, "is_pit_out_lap": true},
+    {"driver_number": 1, "lap_number": 2, "lap_duration": 79.8, "is_pit_out_lap": false},
+    {"driver_number": 16, "lap_number": 1, "lap_duration": 85.3, "is_pit_out_lap": true},
+    {"driver_number": 16, "lap_number": 2, "lap_duration": 79.5, "is_pit_out_lap": false}
+  ],
+  "stints?session_key=9586": [
+    {"driver_number": 1, "stint_number": 1, "compound": "SOFT", "lap_start": 1, "lap_end": 2, "tyre_age_at_start": 0},
+    {"driver_number": 16, "stint_number": 1, "compound": "SOFT", "lap_start": 1, "lap_end": 2, "tyre_age_at_start": 0}
+  ],
+  "pit?session_key=9586": []
+}
