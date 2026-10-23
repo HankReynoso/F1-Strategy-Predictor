@@ -56,17 +56,31 @@ class PitLane:
     note: str = ""
 
 
-# The hand-maintained table. One entry per first-time circuit identified in
-# ticket 07's survey — i.e. a 2022–2025 race whose FastF1 ``Location`` had
-# no earlier race (same-era or pre-era) to measure Pit Loss from. A circuit
-# with no entry here and no history becomes an Excluded Race (ticket 02's
-# ``DATA_UNAVAILABLE`` path), which is the ticket's intended fallback.
+# The hand-maintained table. One entry per circuit whose FastF1 ``Location``
+# has no earlier race the loader can measure Pit Loss from under default
+# settings. Two sources of entries:
+#
+# - *First-time circuits* (ticket 07's survey): a 2022–2025 race whose
+#   FastF1 ``Location`` had no earlier race at any time — Miami 2022 and
+#   Las Vegas 2023.
+# - *2022 circuits whose only pre-era history is 2018–2019* (ticket 25):
+#   Melbourne, Montréal, Spa-Francorchamps, Marina Bay and Suzuka. Those
+#   seasons stopped being downloadable through FastF1's live-timing API,
+#   so the ADR-0004 Pit Loss exception's pre-era pass comes back empty
+#   and the loader needs this table as its last fallback. Confirmed from
+#   the 2026-10-23 baseline attempt's Excluded Races (commit e5e9699).
+#
+# A circuit with no entry here and no history becomes an Excluded Race
+# (ticket 02's ``DATA_UNAVAILABLE`` path), which is the ticket's intended
+# fallback.
 #
 # Pit lane published figures are hard to come by: the FIA publishes a Pit
 # Lane Drawing per event but not a length-in-metres figure, and the F1
 # organiser's circuit guides focus on the main lap. Entries below cite one
-# published figure each; where a figure couldn't be confirmed against a
-# second source, the ticket's "First-time circuits" section says so.
+# published source per figure; where a length couldn't be confirmed against
+# a second source, the ``note`` field says so. Speed limits are
+# cross-confirmed against an FIA stewards' pit-lane-speeding decision for
+# the event, which prints the limit set for that Event verbatim.
 PIT_LANES: tuple[PitLane, ...] = (
     PitLane(
         circuit="Miami",
@@ -94,6 +108,98 @@ PIT_LANES: tuple[PitLane, ...] = (
         note=(
             "Both figures are single-source only; the FIA Pit Lane Drawing "
             "shows the geometry but doesn't print a length."
+        ),
+    ),
+    PitLane(
+        circuit="Melbourne",
+        length_m=281.0,
+        speed_limit_kmh=80.0,
+        source=(
+            "Length: TracingInsights 2024 Australian Grand Prix preview "
+            "(\"the Melbourne circuit has the second shortest pit lane on "
+            "the calendar at just 281 meters\"); corroborated by McLaren's "
+            "circuit notes (280 m / 0.714 mi) and the 2014 Mercedes stat "
+            "sheet (289 m under speed-limit control, pre-2022 widening). "
+            "Speed limit: FIA 2022 Australian Grand Prix stewards' "
+            "decision — Car 5 pit lane speeding, Doc 42 (limit set at "
+            "80 km/h for this Event, raised from 60 km/h after the 2022 "
+            "pit lane widening)."
+        ),
+    ),
+    PitLane(
+        circuit="Montréal",
+        length_m=400.0,
+        speed_limit_kmh=80.0,
+        source=(
+            "Length: McLaren 2015 Canadian Grand Prix preview on "
+            "Racecar.com (\"Pitlane length: 400m/0.249 miles, estimated "
+            "time loss 22s\"); corroborated by Mercedes-AMG F1's 2024 "
+            "Canadian Grand Prix preview (405 m, ranked 8th on the "
+            "calendar) and Sportskeeda's circuit stats (400 m). "
+            "Speed limit: FIA 2022 Canadian Grand Prix stewards' decision "
+            "— Car 4 pit lane speeding, Doc 67 (limit set at 80 km/h "
+            "for this Event)."
+        ),
+        note=(
+            "Oversteer48's circuit guide gives 741 m measured from where "
+            "the lane leaves the track to where it rejoins — this includes "
+            "the slow-in and slow-out zones outside the speed-limited "
+            "section, and the formula already accounts for those in its "
+            "fixed slow-in/slow-out penalty, so the 400 m speed-limited "
+            "length is the right input."
+        ),
+    ),
+    PitLane(
+        circuit="Spa-Francorchamps",
+        length_m=653.0,
+        speed_limit_kmh=80.0,
+        source=(
+            "Length: Oversteer48 Spa-Francorchamps circuit guide (\"The "
+            "Formula 1 pit lane at Spa Francorchamps is 653 metres / "
+            "2144 ft long\"). "
+            "Speed limit: FIA 2022 Belgian Grand Prix stewards' decision "
+            "— Car 16 pit lane speeding (Leclerc, limit set at 80 km/h "
+            "for this Event, exceeded by 1.0 km/h)."
+        ),
+        note=(
+            "Length is single-source; the 994 m figure that appears in "
+            "the GT4 European Series' Spa briefing applies to the "
+            "endurance pit-lane configuration (which uses the old pit "
+            "lane alongside the F1 one) and does not fit here."
+        ),
+    ),
+    PitLane(
+        circuit="Marina Bay",
+        length_m=404.0,
+        speed_limit_kmh=60.0,
+        source=(
+            "Length: The Star 2019 (\"offers one of the longest pit "
+            "lanes on the F1 calendar, all 404 metres\"); corroborated "
+            "by the 2014 Mercedes Singapore GP stat sheet (411 m under "
+            "speed-limit control, same physical pit lane). "
+            "Speed limit: FIA 2022 Singapore Grand Prix stewards' "
+            "decision — Car 63 pit lane speeding (Russell, limit set at "
+            "60 km/h for this Event, exceeded by 0.6 km/h). The limit "
+            "was raised to 80 km/h for 2025 after a Friday-practice "
+            "safety trial — a 2023+ change outside the 2022 scope of "
+            "this entry."
+        ),
+    ),
+    PitLane(
+        circuit="Suzuka",
+        length_m=413.0,
+        speed_limit_kmh=80.0,
+        source=(
+            "Length: McLaren 2016 Japanese Grand Prix preview on "
+            "Racecar.com (\"Pitlane length 413m/0.257 miles, estimated "
+            "time loss 23s\"). "
+            "Speed limit: FIA 2022 Japanese Grand Prix stewards' decision "
+            "— Car 77 pit lane speeding (Bottas, limit set at 80 km/h "
+            "for this Event, exceeded by 4.2 km/h)."
+        ),
+        note=(
+            "Length is single-source and dated 2016; the Suzuka pit lane "
+            "has not been rebuilt since, so the figure still applies."
         ),
     ),
 )

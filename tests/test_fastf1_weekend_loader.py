@@ -209,6 +209,37 @@ def test_miami_2022_pit_loss_is_estimated_from_the_pit_lane_table() -> None:
     assert weekend.pre_race.pit_loss == pytest.approx(expected)
 
 
+@pytest.mark.parametrize(
+    "event,location",
+    [
+        ("Australian Grand Prix", "Melbourne"),
+        ("Canadian Grand Prix", "Montréal"),
+        ("Belgian Grand Prix", "Spa-Francorchamps"),
+        ("Singapore Grand Prix", "Marina Bay"),
+        ("Japanese Grand Prix", "Suzuka"),
+    ],
+)
+def test_2022_pre_era_only_circuits_use_the_pit_lane_table_estimate(
+    event: str, location: str
+) -> None:
+    # Ticket 25: the five 2022 circuits whose only pre-era Pit Loss
+    # history is 2018–2019 — which FastF1 can no longer download —
+    # must fall through to the pit lane table estimate instead of
+    # becoming Excluded Races. Confirmed from the 2026-10-23 baseline
+    # attempt's Excluded Races (commit e5e9699).
+    from f1_strategy.pit_lane_table import (
+        estimated_pit_loss,
+        pit_lane_entry,
+    )
+
+    weekend = load_weekend(2022, event, cache_dir=CACHE_DIR)
+    assert weekend.pre_race.circuit == location
+    assert weekend.pre_race.estimated_pit_loss is True
+    assert weekend.pre_race.pit_loss_seasons == ()
+    expected = estimated_pit_loss(pit_lane_entry(location))
+    assert weekend.pre_race.pit_loss == pytest.approx(expected)
+
+
 def test_list_season_2024_marks_sprint_weekends() -> None:
     # Ticket 02 acceptance: the loader lists a season's race weekends with
     # sprints marked. 2024 ran 24 championship rounds, of which six were
@@ -245,20 +276,23 @@ def test_monaco_2022_pit_loss_comes_from_monte_carlo_pre_era() -> None:
     assert 10.0 < weekend.pre_race.pit_loss < 40.0
 
 
-def test_marina_bay_2022_pit_loss_comes_from_singapore_pre_era() -> None:
-    # Ticket 16: FastF1 renamed the Singapore venue from "Singapore" (2018,
-    # 2019) to "Marina Bay" (2022+). Marina Bay 2022 has no same-era race
-    # at Location "Marina Bay", and before the alias map it fell into
-    # ticket 07's estimated-Pit-Loss path with no table entry. With the
-    # alias group, the pre-era fallback finds 2018 and 2019 "Singapore"
-    # races and the Pit Loss is measured.
+def test_marina_bay_2022_falls_through_to_the_pit_lane_table_estimate() -> None:
+    # Ticket 16 still aliases Marina Bay (2022–2025) to Singapore
+    # (2018, 2019) for pre-era Pit Loss. Ticket 25 then found FastF1 can
+    # no longer download 2018–2019 live-timing data, so the pre-era pass
+    # for Marina Bay 2022 comes back empty and the loader falls through
+    # to the pit lane table entry (now added by ticket 25) and flags the
+    # Pit Loss as estimated. The alias still matters: if 2018/2019
+    # Singapore ever becomes loadable again, the pre-era pass picks
+    # those races up without any further code change.
+    #
+    # See the parametrized ticket-25 test above for the full list of
+    # five 2022 circuits in this boat; this named test documents the
+    # ticket 16 → ticket 25 handover for Marina Bay specifically.
     weekend = load_weekend(2022, "Singapore Grand Prix", cache_dir=CACHE_DIR)
     assert weekend.pre_race.circuit == "Marina Bay"
-    assert weekend.pre_race.estimated_pit_loss is False
-    seasons = weekend.pre_race.pit_loss_seasons
-    assert seasons, "aliased Singapore pre-era races should supply Pit Loss"
-    assert all(2018 <= s <= 2021 for s in seasons), seasons
-    assert 10.0 < weekend.pre_race.pit_loss < 40.0
+    assert weekend.pre_race.estimated_pit_loss is True
+    assert weekend.pre_race.pit_loss_seasons == ()
 
 
 def test_miami_gardens_2025_pit_loss_comes_from_miami_same_era() -> None:
