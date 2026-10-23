@@ -4,7 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
+
+**Findings:** [`openf1-findings.md`](../openf1-findings.md)
 
 **Category:** enhancement
 
@@ -31,13 +33,39 @@ Also record: which seasons OpenF1 covers, rate limits and access rules (free use
 - What would the second loader cost to build, roughly in tickets?
 
 **Acceptance criteria:**
-- [ ] A findings document in the repo, with a field-by-field table (field, FastF1 source today, OpenF1 endpoint/field or "missing", notes), backed by real responses for the three weekend types above
-- [ ] OpenF1's season coverage, rate limits and terms of use are recorded with links
-- [ ] A clear recommendation: build a second loader (with a rough ticket breakdown), or don't (and why), plus any ADR it would need
-- [ ] FastF1 issue #978's status at the time of writing is recorded
-- [ ] No production code changes
+- [x] A findings document in the repo, with a field-by-field table (field, FastF1 source today, OpenF1 endpoint/field or "missing", notes), backed by real responses for the three weekend types above
+- [x] OpenF1's season coverage, rate limits and terms of use are recorded with links
+- [x] A clear recommendation: build a second loader (with a rough ticket breakdown), or don't (and why), plus any ADR it would need
+- [x] FastF1 issue #978's status at the time of writing is recorded
+- [x] No production code changes
 
 **Out of scope:**
 - Building the OpenF1 loader
 - Any model, scoring or Backtest change
 - Paid or authenticated data sources (e.g. F1 TV tokens)
+
+## Implementation notes
+
+**What was done.** Research-only ticket. Checked `api.openf1.org` reachability (HTTP 200, 620 ms), probed the historical coverage (2023, 2024, 2025 only — 2018–2022 return zero meetings), read the OpenF1 landing page for terms (CC BY-NC-SA 4.0; free tier 3 req/s + 30 req/min; historical data free, live-data tier €9.90) and the GitHub API for FastF1 issue #978 (open; maintainer shipped `fastf1==3.9.0a0` on 2026-10-18 which supports F1 TV authentication, paid subscription required — out of scope). Verified every field the FastF1 weekend loader builds today against real OpenF1 responses for three 2024 weekends:
+- conventional, no neutralisation: Italian GP (meeting 1244, race session 9590)
+- sprint: Austrian GP (meeting 1239, race 9550, sprint 9549)
+- neutralised race: São Paulo GP (meeting 1249, race 9636)
+Austrian GP also contains a short VSC on lap 66, giving a second neutralisation spot-check inside the sprint sample. Findings in [`../openf1-findings.md`](../openf1-findings.md) include a field-by-field table and the raw requests used.
+
+**Decisions and reasoning.**
+- Chose Monza / Austria / São Paulo for the three samples. Monza because it was a fully conventional 2024 weekend with zero SC/VSC — exercises every pre-race session type and the baseline pit-loss / per-lap derivations without noise. Austria because it is a sprint weekend AND exposes used-tyre starting age cleanly (Verstappen's sprint stint 1 opens at `tyre_age_at_start=5`, confirming OpenF1 carries the new/used distinction we need for the loader's `new_when_fitted` boolean). São Paulo because it was heavily neutralised with VSC, SC, red flag and a second SC — the hardest case for the race_control-to-neutralisation-period reconstruction, and the one that uncovered the `pit_duration` red-flag pollution issue.
+- Alternative weekends considered: Mexico City GP as the neutralised race (SC on laps 1–6 only). Rejected because the São Paulo signal mix is strictly richer; Mexico was used as a second spot-check for SC-only reconstruction and confirmed the same message grammar.
+- Recommended **building the second loader** rather than relying on the FastF1 3.9 F1 TV path. The brief explicitly places paid/authenticated data sources out of scope, OpenF1's free tier covers 2023+ with no rate-limit surprises, and the loader seam already isolates the data source so a second one is additive.
+- Recommended an ADR (not just an implementation note) because the per-season data-source policy is hard to reverse once baselines are published against it, surprises any future contributor without context, and is the result of a real trade-off (OpenF1's non-commercial licence vs. FastF1's paywalled historical path). Fits [`docs/agents/domain.md`](../../../docs/agents/domain.md) ADR criteria.
+
+**Deviations from the ticket.** None material. The ticket asked for "one conventional 2024 weekend, one sprint 2024 weekend and one Neutralised 2024 race"; sampled three distinct weekends plus one secondary SC-only probe (Mexico 2024 R, session 9625) to confirm the SC lap-range reconstruction, which the brief didn't require but was cheap and strengthens the recommendation.
+
+**Open questions and limitations.**
+- Did not test every 2023+ meeting, only three. The findings assume OpenF1's schema is stable across the catalogue; the only observed per-weekend variation was the `pit_duration` red-flag pollution at São Paulo.
+- `/v1/race_control` neutralisation reconstruction relies on paired "DEPLOYED"/"ENDING" (VSC) and "DEPLOYED"/"IN THIS LAP" (SC) messages. A race whose feed is missing an "end" event would leak a period to the end of the race. The findings suggest a safety ceiling at the race lap count; a future ticket should assert both ends are present and log a quality warning if not.
+- OpenF1 does not expose per-lap TrackStatus, so a yellow-flag-only lap (code 2) that FastF1 would surface is not visible. The current loader only cares about SC/VSC (`_SC_STATUS = {"4"}`, `_VSC_STATUS = {"6","7"}`), so this is not a regression.
+- 2018–2020 pre-era Pit Loss history still has no free unauthenticated path. The existing pit-lane-table fallback ([ticket 07](07-estimated-pit-loss-first-time-circuits.md)) covers Miami 2022 and Las Vegas 2023; the 2022 Australia/Canada/Belgium/Singapore/Japan gap remains and should be acknowledged in the ADR, not fixed here.
+
+**Suggested follow-ups.** Six new tickets as laid out in the findings' "Rough ticket breakdown" section: ADR-0006 (per-season data source policy), OpenF1 client + rate limiter, OpenF1 pre-race loader, OpenF1 race loader + Pit Loss, season router + `list_season` port, and the re-run of the full 2022–2025 baseline Backtest (upgrades of ticket 09). Will file as needs-triage tickets separately if the user approves the recommendation.
+
+**Review feedback given to the user.** None in this session beyond the findings themselves.
