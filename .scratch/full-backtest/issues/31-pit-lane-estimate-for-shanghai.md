@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Category:** bug
 
@@ -16,8 +16,49 @@
 
 Found in the first OpenF1-era baseline (`results/backtest/2026-10-26_baseline.md`). Follow ticket 07's and 25's approach exactly: published pit lane length and speed limit, each source cited, a missing figure recorded rather than guessed.
 
-- [ ] Shanghai has a pit lane table entry with length, speed limit and cited sources
-- [ ] 2024 China loads with Pit Loss flagged as estimated and is scored
-- [ ] 2025 China's Pit Loss comes from 2024 (measured), not the estimate
-- [ ] Check every other 2022–2025 circuit for the same gap (no measurable history and no table entry) and record the result
-- [ ] Tests go through the existing loader and Backtest calls
+- [x] Shanghai has a pit lane table entry with length, speed limit and cited sources
+- [x] 2024 China loads with Pit Loss flagged as estimated and is scored
+- [x] 2025 China's Pit Loss comes from 2024 (measured), not the estimate
+- [x] Check every other 2022–2025 circuit for the same gap (no measurable history and no table entry) and record the result
+- [x] Tests go through the existing loader and Backtest calls
+
+## Implementation notes
+
+**What was built (2026-10-26), test-first.**
+
+- `src/f1_strategy/pit_lane_table.py`: new `Shanghai` entry (351 m, 80 km/h) and a Shanghai bullet in the module's provenance comment. Estimate through ticket 07's formula: 19.7 s.
+- `tests/test_estimated_pit_loss.py`: `test_table_includes_shanghai`. The existing calibration-band test (17–30 s) covers the new entry unchanged.
+- `tests/test_shanghai_pit_loss.py` (new): entry/citation test; 2024 China through `measure_pit_loss_and_history` with no history gives the flagged table estimate; 2025 China with a 2024 sample gives the measured value, `pit_loss_seasons == (2024,)`, not estimated; `run_backtest` scores a Shanghai estimated weekend and lists it under "Pit Loss estimated"; one slow test loads real 2024 China through `data.load_weekend` (OpenF1) and scores it in a Backtest (passed, 18 s). Fast suite: 270 passed.
+- No loader change was needed: ticket 23's fallback chain already ends at the table, so an entry is all 2024 China lacked.
+
+**Sources (cited in the entry).**
+
+- Length 351 m: McLaren 2016 Chinese GP preview on Racecar.com, "Pitlane length: 351m/0.218 miles, estimated time loss 21s". Single source.
+- Speed limit 80 km/h: FIA 2019 Chinese GP stewards' decision, Doc 8, Car 10 (Gasly, "set at 80 km/h for this Event", 88 km/h recorded). Read from the PDF text.
+
+**Missing figures, recorded not guessed.**
+
+- No 2024 China stewards' pit-lane-speeding decision exists in what I could find, and the 2024 Race Director's Event Notes (Doc 29) print no limit. The 2024 limit is therefore unconfirmed; 2019's is used and the entry's `note` says so.
+- No second length source: RaceFans gives a Pit Loss (17.23 s) but no length or limit. Not used as an input, because ticket 07 builds the estimate from geometry and calibrating on a measured loss would be circular.
+
+**Decisions.**
+
+- Used the 2019 limit rather than leaving the entry out: without it 2024 China stays an Excluded Race, and 80 km/h is the limit at every other circuit in the table except Marina Bay. Rejected: borrowing RaceFans' 17.23 s directly (different definition, unsourced method).
+- Left the pit-lane-table fallback in `data.py` alone; the only code touched is the table.
+
+**Survey of other 2022–2025 circuits (criterion 4).** Method: FastF1 event schedules 2021–2024 (`Location` values) against the table, plus `fastf1_loader.load_past_race_samples` run on 2021 Lusail and Imola.
+
+- Table (measured history impossible): Miami, Las Vegas, Melbourne, Montréal, Spa-Francorchamps, Marina Bay, Suzuka, and now Shanghai.
+- 2022 circuits with a 2021 race (the pre-era pass reaches 2021, which the mirror still serves): Austin, Baku, Barcelona, Budapest, Imola, Jeddah, Le Castellet, Mexico City, Monaco (via the Monte Carlo alias), Monza, Sakhir, Silverstone, Spielberg, São Paulo, Yas Island, Zandvoort. The baseline scored or correctly excluded-as-wet all of them, with none in its "Pit Loss estimated" list.
+- Lusail has no 2022 race, but the 2021 Qatar race is in the schedule as `Lusail`, and a direct load returned 24 Pit Loss samples, so 2023 Qatar's Pit Loss is measurable. Its baseline exclusion is the `int(None)` loader crash (ticket 30), not a Pit Loss gap.
+- Miami Gardens is covered by the Miami alias (ticket 16). **Result: Shanghai was the only remaining gap.**
+
+**Limitations and follow-ups.**
+
+- The baseline's 2025 China warning ("2022/2023 Shanghai: no usable past-race samples") stays: it is true and harmless. 2025 China's Pit Loss now depends on OpenF1 `/v1/pit` having rows for 2024 China; the fast test pins the code path, not OpenF1's coverage. Check it when the baseline is re-run.
+- If a 2024/2025 China stewards' decision or FIA pit lane length turns up, replace the figures and drop the note.
+- Not done: ADR-0006's "Pre-era Pit Loss hole" paragraph names five circuits and was not extended to Shanghai. It is a related but separate cause (not raced in the era, rather than pre-era download loss), so it is flagged here instead.
+- No `CONTEXT.md` or spec change; no new term was introduced.
+- Re-run the baseline after tickets 29–31 land: "Excluded Races" should lose 2024 China (20 becomes 19, before ticket 29/30 effects).
+
+**Review feedback.** Estimates for the ticket-25/31 circuits are now the largest unvalidated input in the 2022 and 2024-China rows. Once the baseline re-run has measured values for 2025 China, compare them with the 19.7 s estimate to see whether the formula holds at Shanghai.

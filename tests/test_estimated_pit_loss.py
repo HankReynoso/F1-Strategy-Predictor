@@ -68,6 +68,12 @@ def test_table_includes_the_2022_pre_era_only_circuits():
         assert required in circuits, required
 
 
+def test_table_includes_shanghai():
+    # Ticket 31: Shanghai wasn't raced 2020–2023 and its 2018–2019 races
+    # can no longer be downloaded, so 2024 China needs an entry.
+    assert "Shanghai" in {entry.circuit for entry in PIT_LANES}
+
+
 def test_pit_lane_entry_lookup_matches_table_circuit_names():
     for entry in PIT_LANES:
         assert pit_lane_entry(entry.circuit) is entry

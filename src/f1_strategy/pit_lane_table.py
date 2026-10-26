@@ -69,6 +69,11 @@ class PitLane:
 #   so the ADR-0004 Pit Loss exception's pre-era pass comes back empty
 #   and the loader needs this table as its last fallback. Confirmed from
 #   the 2026-10-23 baseline attempt's Excluded Races (commit e5e9699).
+# - *Shanghai* (ticket 31): not raced 2020–2023, and its 2018–2019 races
+#   can no longer be downloaded (ADR-0006), so 2024 China has no
+#   measurable history. Confirmed from the 2026-10-26 baseline's Excluded
+#   Races (commit 282450e). 2025 China measures from 2024 and never
+#   reaches this entry.
 #
 # A circuit with no entry here and no history becomes an Excluded Race
 # (ticket 02's ``DATA_UNAVAILABLE`` path), which is the ticket's intended
@@ -200,6 +205,28 @@ PIT_LANES: tuple[PitLane, ...] = (
         note=(
             "Length is single-source and dated 2016; the Suzuka pit lane "
             "has not been rebuilt since, so the figure still applies."
+        ),
+    ),
+    PitLane(
+        circuit="Shanghai",
+        length_m=351.0,
+        speed_limit_kmh=80.0,
+        source=(
+            "Length: McLaren 2016 Chinese Grand Prix preview on "
+            "Racecar.com (\"Pitlane length: 351m/0.218 miles, estimated "
+            "time loss 21s\"). "
+            "Speed limit: FIA 2019 Chinese Grand Prix stewards' decision "
+            "— Doc 8, Car 10 pit lane speeding (Gasly, limit set at "
+            "80 km/h for this Event, exceeded by 8 km/h)."
+        ),
+        note=(
+            "Both figures are single-source and neither is from the "
+            "2024 event: the length is dated 2016 and the limit is the "
+            "2019 Event's. No 2024 China stewards' pit-lane-speeding "
+            "decision was found (the 2024 Race Director's Event Notes, "
+            "Doc 29, print no limit), so the 2024 limit is unconfirmed. "
+            "RaceFans lists a Pit Loss of 17.23 s for Shanghai but no "
+            "length or limit, so it is not used as an input."
         ),
     ),
 )
