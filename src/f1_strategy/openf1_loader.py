@@ -34,8 +34,9 @@ import math
 import statistics
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Protocol
+from typing import Any, Callable, Iterable, Protocol
 
+from .backtest import RaceSpec
 from .location_aliases import location_group
 from .openf1_client import OpenF1Client
 from .regulation_era import era_start
@@ -113,6 +114,11 @@ def load_weekend(
     cache_dir: str | Path = ".cache/openf1",
     fuel_effect_s_per_lap: float = 0.03,
     history_min_stint_length: int = 4,
+    measure_history: Callable[
+        [str, int],
+        tuple[float, tuple[int, ...], bool, dict[Compound, HistoricalDegradation]],
+    ]
+    | None = None,
 ) -> RaceWeekend:
     """Load an OpenF1 race weekend into the project's weekend description.
 
@@ -127,13 +133,20 @@ def load_weekend(
     built; tests inject a fixture-backed fake instead so no test touches
     the network.
 
-    Pit Loss and Historical Degradation are measured from past OpenF1
-    seasons only (2023+). A 2024 race reads 2023; a 2023 race has no
-    OpenF1 history and gets ``pit_loss=0.0`` / empty
-    ``historical_degradation``, which ticket 23 is expected to replace
-    by merging in 2022 FastF1 samples. ``fuel_effect_s_per_lap`` and
-    ``history_min_stint_length`` match the FastF1 loader's defaults so
-    rates are directly comparable across sources.
+    ``measure_history`` is the ticket-23 cross-source hook: when provided,
+    it is called as ``measure_history(circuit, race_season)`` to produce
+    ``(pit_loss, pit_loss_seasons, estimated_pit_loss,
+    historical_degradation)`` from past races across both data sources
+    plus the pit-lane-table fallback. When ``None`` (the direct-loader
+    path kept for the fast tests and for callers that only want OpenF1),
+    the past-race scan is OpenF1-only and ``estimated_pit_loss`` is
+    always ``False``; ticket 22's open question still applies on that
+    path, so top-level callers should go through :mod:`.data` instead of
+    calling this function directly for 2023+ races.
+
+    ``fuel_effect_s_per_lap`` and ``history_min_stint_length`` match the
+    FastF1 loader's defaults so rates are directly comparable across
+    sources.
     """
     if client is None:
         client = OpenF1Client(cache_dir=Path(cache_dir))
@@ -177,13 +190,22 @@ def load_weekend(
     )
 
     circuit = str(meeting["location"])
-    pit_loss, pit_loss_seasons, historical_degradation = _past_races_at_circuit(
-        circuit=circuit,
-        race_season=season,
-        client=client,
-        fuel_effect_s_per_lap=fuel_effect_s_per_lap,
-        history_min_stint_length=history_min_stint_length,
-    )
+    if measure_history is None:
+        pit_loss, pit_loss_seasons, historical_degradation = _past_races_at_circuit(
+            circuit=circuit,
+            race_season=season,
+            client=client,
+            fuel_effect_s_per_lap=fuel_effect_s_per_lap,
+            history_min_stint_length=history_min_stint_length,
+        )
+        estimated_pit_loss = False
+    else:
+        (
+            pit_loss,
+            pit_loss_seasons,
+            estimated_pit_loss,
+            historical_degradation,
+        ) = measure_history(circuit, season)
 
     return RaceWeekend(
         pre_race=PreRaceInfo(
@@ -195,7 +217,7 @@ def load_weekend(
             teams=teams,
             pit_loss=pit_loss,
             pit_loss_seasons=pit_loss_seasons,
-            estimated_pit_loss=False,
+            estimated_pit_loss=estimated_pit_loss,
             historical_degradation=historical_degradation,
         ),
         race=RaceOutcome(
@@ -209,6 +231,51 @@ def load_weekend(
 # ---------------------------------------------------------------------------
 # Meeting selection and schedule derivation.
 # ---------------------------------------------------------------------------
+
+
+def list_season(
+    season: int,
+    *,
+    client: _OpenF1Client | None = None,
+    cache_dir: str | Path = ".cache/openf1",
+) -> list[RaceSpec]:
+    """Every race weekend in a 2023+ season, in round order, with sprints marked.
+
+    Parallel to :func:`.fastf1_loader.list_season` so both return the
+    same ``RaceSpec`` list shape (``event`` is the full "<Country> Grand
+    Prix" meeting name, matching FastF1's ``EventName`` column). Round
+    order is :func:`_round_number`'s derivation (meetings sorted by
+    ``date_start``, 1-indexed). Pre-season testing meetings are filtered
+    out by :func:`_is_race_meeting`, same rule :func:`_find_meeting`
+    uses so a season listing never contains anything a load call could
+    not resolve.
+
+    Sprint detection reads each meeting's ``/v1/sessions`` endpoint: the
+    presence of a "Sprint" session marks the weekend as sprint. One
+    extra request per meeting on a cold cache; the OpenF1 client caches
+    them on disk so a re-run is zero requests.
+    """
+    if client is None:
+        client = OpenF1Client(cache_dir=Path(cache_dir))
+    meetings = client.get("meetings", year=season)
+    races = sorted(
+        (m for m in meetings if _is_race_meeting(m)),
+        key=lambda m: m["date_start"],
+    )
+    specs: list[RaceSpec] = []
+    for meeting in races:
+        sessions_meta = client.get(
+            "sessions", meeting_key=meeting["meeting_key"]
+        )
+        session_names = {s.get("session_name", "") for s in sessions_meta}
+        specs.append(
+            RaceSpec(
+                season=season,
+                event=str(meeting["meeting_name"]),
+                is_sprint_weekend=_is_sprint_weekend(session_names),
+            )
+        )
+    return specs
 
 
 def _find_meeting(meetings: list[dict], event: str) -> dict:

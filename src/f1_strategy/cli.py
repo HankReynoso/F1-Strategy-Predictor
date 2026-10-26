@@ -228,8 +228,17 @@ def _run_compare_mode(argv: Sequence[str]) -> int:
 
 
 def _fastf1_load() -> Loader:
+    """Default loader for every top-level command: the ticket 23 data
+    facade. Dispatches to FastF1 or OpenF1 by season (ADR-0006).
+
+    The ``_fastf1_`` prefix is kept so test monkeypatching stays stable
+    across the rename to the router; the function now returns the
+    cross-source :func:`data.load_weekend`, not the single-source
+    FastF1 one.
+    """
     import fastf1
-    from .fastf1_loader import load_weekend
+
+    from .data import load_weekend
 
     fastf1.set_log_level("WARNING")
     return load_weekend
@@ -237,7 +246,8 @@ def _fastf1_load() -> Loader:
 
 def _fastf1_load_and_list() -> tuple[Loader, SeasonLister]:
     import fastf1
-    from .fastf1_loader import list_season, load_weekend
+
+    from .data import list_season, load_weekend
 
     fastf1.set_log_level("WARNING")
     return load_weekend, list_season

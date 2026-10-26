@@ -18,6 +18,7 @@ from fastf1.exceptions import FastF1CriticalError
 
 from .backtest import RaceSpec
 from .location_aliases import location_group
+from .openf1_loader import PastRaceSamples
 from .pit_lane_table import estimated_pit_loss, pit_lane_entry
 from .regulation_era import PIT_LOSS_PRE_ERA_MIN_SEASON, era_start
 from .weekend import (
@@ -613,6 +614,78 @@ def _slope(points: list[tuple[int, float]]) -> float | None:
     if sxx <= 0:
         return None
     return sxy / sxx
+
+
+def load_past_race_samples(
+    season: int,
+    event: str,
+    *,
+    cache_dir: str | Path = ".cache/fastf1",
+    fuel_effect_s_per_lap: float = 0.03,
+    history_min_stint_length: int = 4,
+) -> PastRaceSamples:
+    """Collect raw Pit Loss and Historical Degradation samples from one
+    past FastF1 race, in the shape ticket 23's cross-source aggregator
+    reads.
+
+    Parallel to :func:`.openf1_loader.load_past_race_samples`: resolves
+    the race via FastF1's event schedule (matching ``event`` against
+    ``Location`` or ``EventName``, case-insensitively — the alias
+    strings the ticket-16 ``location_group`` yields are ``Location``
+    values), loads its laps, and reuses the private
+    :func:`_pit_losses_in` and :func:`_historical_stint_rates` helpers.
+
+    Returns empty ``PastRaceSamples`` when the schedule has no matching
+    row, when FastF1 refuses the laps for a past race (older seasons
+    behind the live-timing archive 401), or when any non-rate-limit
+    error prevents the load. :class:`fastf1.exceptions.FastF1CriticalError`
+    is **not** swallowed — it propagates so the Backtest's rate-limit
+    wait/retry logic (ticket 17) still fires.
+    """
+    cache_dir = Path(cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    fastf1.Cache.enable_cache(str(cache_dir))
+    try:
+        schedule = fastf1.get_event_schedule(season)
+    except FastF1CriticalError:
+        raise
+    except Exception:
+        return PastRaceSamples(pit_losses=(), stint_rates=())
+    needle = str(event).strip().lower()
+    try:
+        matches = schedule[
+            (schedule["Location"].astype(str).str.lower() == needle)
+            | (schedule["EventName"].astype(str).str.lower() == needle)
+        ]
+    except Exception:
+        return PastRaceSamples(pit_losses=(), stint_rates=())
+    if matches.empty:
+        return PastRaceSamples(pit_losses=(), stint_rates=())
+    row = matches.iloc[0]
+    try:
+        race = fastf1.get_session(season, int(row["RoundNumber"]), "R")
+        race.load(laps=True, telemetry=False, weather=False, messages=False)
+        if not hasattr(race, "_laps"):
+            # FastF1 logs and continues when the live-timing archive refuses
+            # (older seasons behind the mid-October 2026 401).
+            return PastRaceSamples(pit_losses=(), stint_rates=())
+    except FastF1CriticalError:
+        raise
+    except Exception:
+        return PastRaceSamples(pit_losses=(), stint_rates=())
+    try:
+        losses = tuple(_pit_losses_in(race))
+    except Exception:
+        losses = ()
+    try:
+        rates = tuple(
+            _historical_stint_rates(
+                race, fuel_effect_s_per_lap, history_min_stint_length
+            )
+        )
+    except Exception:
+        rates = ()
+    return PastRaceSamples(pit_losses=losses, stint_rates=rates)
 
 
 # Back-compat alias: tests from ticket 07 pin the old function name.

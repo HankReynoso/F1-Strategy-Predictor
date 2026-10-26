@@ -28,6 +28,7 @@ from .backtest_io import (
     load_backtest_result,
     save_backtest_result,
 )
+from .data import list_season, load_weekend, measure_pit_loss_and_history
 from .degradation import DegradationEstimate, DegradationSource
 from .predictor import (
     CandidateStrategy,
@@ -103,7 +104,10 @@ __all__ = [
     "detect_code_version",
     "format_backtest",
     "format_comparison",
+    "list_season",
     "load_backtest_result",
+    "load_weekend",
+    "measure_pit_loss_and_history",
     "predict",
     "run_backtest",
     "save_backtest_result",
