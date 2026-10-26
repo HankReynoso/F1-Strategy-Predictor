@@ -4,7 +4,7 @@ A data analytics tool that combines historical F1 data, weekend practice-session
 
 ## Recording work
 
-Every session that writes or changes code leaves a written record in the repo, not just in chat. The chat reply to the user summarises the same record. A ticket is done only when every item below that applies is committed alongside the code:
+Every session that writes or changes code leaves a written record in the repo, not just in chat. The chat reply to the user summarises the same record. A ticket is done only when every item below that applies is written alongside the code. Sessions don't commit or push: the user reviews and commits every change. End by listing the changed files and giving the exact `git add` and `git commit` commands for the user to run:
 
 - **Ticket file**: tick the passing acceptance criteria, set `Status: done` (or leave it open and say why), and append an `## Implementation notes` section covering:
   - what was built
