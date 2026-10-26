@@ -160,6 +160,26 @@ Ready as written; the warning about `pit_duration` stands. Acceptance criteria:
   and tie the test to one real sample. The hand-built fixture pins
   the derivation; the slow tests pin the real-weekend path.
 
+**Two bugs found and fixed while running the slow tests (2026-10-26).**
+
+- *OpenF1 returns 404 with `{"detail":"No results found."}` for
+  endpoint+filter combinations that have zero rows.* First saw it on
+  `/v1/pit?session_key=9635` (São Paulo 2024 Sprint — no pit stops).
+  The ticket-20 client previously treated every 4xx-other-than-429 as
+  a hard error, so a legitimate "no rows" surfaced as
+  `OpenF1FetchError` and aborted the past-race scan. Fixed in
+  `openf1_client._fetch_with_retry` by matching the `No results found`
+  body on 404 and returning `[]` for it; any other 404 body still
+  raises. Pinned by a new `test_404_with_no_results_body_returns_empty_list`
+  in `tests/test_openf1_client.py`.
+- *Real `/v1/stints` carries rows with `lap_start` / `lap_end` set to
+  `null`* for a driver whose stint never completed a flying lap (lap-1
+  crash, DNS allocation row). `_race_stints` and
+  `_historical_stint_rates` previously crashed on `int(None)`. Both
+  now skip the row. No visible behaviour change in the derived
+  outputs (a null-range stint has no laps to contribute anyway) — the
+  change just stops the crash and lets the past-season scan continue.
+
 **How ticket 23 should use this** (clear seam for the cross-source
 merge):
 

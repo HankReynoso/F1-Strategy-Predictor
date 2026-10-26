@@ -250,6 +250,16 @@ class OpenF1Client:
                     )
                 return data
 
+            # OpenF1 returns 404 with ``{"detail":"No results found."}`` for
+            # endpoint+filter combinations that have no matching rows (e.g.
+            # ``/v1/pit?session_key=<quali>`` or an unused ``/v1/starting_grid``).
+            # The findings already flagged this for ``/v1/starting_grid``;
+            # treating it as an empty list keeps callers from having to
+            # catch :class:`OpenF1FetchError` just to recover from "no rows".
+            # Any other 404 body is still an error.
+            if response.status == 404 and _is_no_results_body(response.body):
+                return []
+
             last_status = response.status
             retryable = response.status == 429 or 500 <= response.status < 600
             if not retryable or attempt >= self._max_retries:
@@ -267,6 +277,23 @@ class OpenF1Client:
         if retry_after is not None:
             return retry_after
         return self._backoff_base * (2 ** attempt)
+
+
+def _is_no_results_body(body: bytes) -> bool:
+    """True for OpenF1's ``{"detail":"No results found."}`` 404 body.
+
+    The server also returns 404 with HTML bodies for genuinely missing
+    endpoints; those must still raise so a caller sees a real error
+    instead of a silent empty list.
+    """
+    try:
+        data = json.loads(body)
+    except (json.JSONDecodeError, ValueError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    detail = data.get("detail")
+    return isinstance(detail, str) and "no results" in detail.lower()
 
 
 def _parse_retry_after(headers: dict[str, str]) -> float | None:

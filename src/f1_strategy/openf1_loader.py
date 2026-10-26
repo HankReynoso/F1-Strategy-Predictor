@@ -559,12 +559,22 @@ def _race_stints(
         compound = _COMPOUND.get(str(row.get("compound", "")).upper())
         if compound is None:
             continue
+        # Real OpenF1 returns some ``/v1/stints`` rows with ``lap_start``
+        # or ``lap_end`` set to ``null`` — observed for a driver whose
+        # stint never completed its first flying lap (e.g. a lap-1 crash)
+        # or whose compound was never actually mounted (DNS allocation
+        # row). Those rows carry no information the predictor can use, so
+        # skip them rather than crash on ``int(None)``.
+        start = row.get("lap_start")
+        end = row.get("lap_end")
+        if start is None or end is None:
+            continue
         out.append(
             Stint(
                 driver=tla,
                 compound=compound,
-                start_lap=int(row["lap_start"]),
-                end_lap=int(row["lap_end"]),
+                start_lap=int(start),
+                end_lap=int(end),
             )
         )
     out.sort(key=lambda s: (s.driver, s.start_lap))
@@ -824,9 +834,15 @@ def _historical_stint_rates(
         compound = _COMPOUND.get(str(stint.get("compound", "")).upper())
         if compound is None or compound not in DRY_COMPOUNDS:
             continue
-        start = int(stint["lap_start"])
-        end = int(stint["lap_end"])
-        age_at_start = int(stint.get("tyre_age_at_start", 0))
+        # Null lap_start / lap_end rows are DNS / unused-allocation rows
+        # (see ``_race_stints``); they can't produce a Degradation sample.
+        lap_start = stint.get("lap_start")
+        lap_end = stint.get("lap_end")
+        if lap_start is None or lap_end is None:
+            continue
+        start = int(lap_start)
+        end = int(lap_end)
+        age_at_start = int(stint.get("tyre_age_at_start") or 0)
         driver_laps = laps_by_driver.get(driver_num, {})
         pit_in_laps = pits_by_driver.get(driver_num, set())
 

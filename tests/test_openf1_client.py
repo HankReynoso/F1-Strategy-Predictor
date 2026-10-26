@@ -355,7 +355,8 @@ def test_persistent_429_raises_openf1_fetch_error(tmp_path):
 
 
 def test_4xx_other_than_429_raises_without_retrying(tmp_path):
-    """A 404 is a real data-shape problem, not a transient fetch failure."""
+    """A 404 with any other body is still a real data-shape problem,
+    not a transient fetch failure."""
     http = _FakeHttp([_http_error(404)])
     clock = _FakeClock()
 
@@ -364,6 +365,22 @@ def test_4xx_other_than_429_raises_without_retrying(tmp_path):
         client.get("meetings", year=1900)
 
     assert "404" in str(excinfo.value)
+    assert len(http.calls) == 1  # no retry
+
+
+def test_404_with_no_results_body_returns_empty_list(tmp_path):
+    """OpenF1 returns 404 with ``{"detail":"No results found."}`` for
+    endpoint+filter combinations that have zero rows (confirmed against
+    ``/v1/pit?session_key=9635`` on 2026-10-26 — São Paulo 2024 Sprint
+    had no pit stops). The client treats this as an empty list so the
+    loader doesn't have to catch :class:`OpenF1FetchError` on every
+    optional per-session fetch."""
+    body = json.dumps({"detail": "No results found."}).encode()
+    http = _FakeHttp([HttpResponse(status=404, body=body, headers={})])
+    clock = _FakeClock()
+
+    client = _client(tmp_path, http, clock)
+    assert client.get("pit", session_key=9635) == []
     assert len(http.calls) == 1  # no retry
 
 

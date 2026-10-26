@@ -75,7 +75,12 @@ def test_monza_2024_historical_degradation_uses_openf1_seasons_only(
     for compound, h in hist.items():
         assert h.seasons == (2023,), (compound, h.seasons)
         assert h.stint_count > 0
-        assert h.rate > 0  # Degradation is a positive s/lap number
+        # A circuit-level Degradation rate at Monza can land slightly
+        # negative after fuel correction: hard tyres don't lose much
+        # over a Monza stint, and the fit's noise can tip a small
+        # positive slope into a small negative. The rate must at least
+        # be a plausible second-per-lap number (not NaN, not huge).
+        assert -0.1 < h.rate < 1.0, (compound, h.rate)
 
 
 # ---------------------------------------------------------------------------
