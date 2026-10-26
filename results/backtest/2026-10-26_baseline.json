@@ -1,0 +1,1946 @@
+{
+  "format_version": 1,
+  "metadata": {
+    "label": "baseline",
+    "run_at": "2026-10-26T21:14:46+00:00",
+    "code_commit": "282450e765b916b4e51c6db1f785306910caa168",
+    "uncommitted_changes": false,
+    "seasons_in_scope": [
+      2022,
+      2023,
+      2024,
+      2025
+    ],
+    "settings": {
+      "tuning_seasons": [
+        2022,
+        2023,
+        2024
+      ],
+      "held_out_season": 2025,
+      "probability_scale_s": 5.0,
+      "plausible_margin_s": 20.0,
+      "stop_window_margin_s": 1.0,
+      "fuel_effect_s_per_lap": 0.03,
+      "min_long_run_length": 4,
+      "long_run_slow_lap_margin_s": 3.0,
+      "push_lap_fast_margin_s": 1.0,
+      "degradation_shrinkage_laps": 4.0,
+      "min_stint_length": 5
+    }
+  },
+  "races": [
+    {
+      "season": 2022,
+      "event": "Bahrain Grand Prix",
+      "circuit": "Sakhir",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 24.05200000000002,
+      "pit_loss_seasons": [
+        2021
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 50,
+      "summary": {
+        "scoreable_drivers": 17,
+        "top_1_credit": 0.0,
+        "top_3_credit": 0.0,
+        "stop_window_hits": 2
+      },
+      "degradation_sources": {
+        "long_runs": 19,
+        "field_average": 9,
+        "push_laps": 2
+      }
+    },
+    {
+      "season": 2022,
+      "event": "Saudi Arabian Grand Prix",
+      "circuit": "Jeddah",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 20.673999999999992,
+      "pit_loss_seasons": [
+        2021
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 14,
+      "summary": {
+        "scoreable_drivers": 13,
+        "top_1_credit": 5.0,
+        "top_3_credit": 10.0,
+        "stop_window_hits": 6
+      },
+      "degradation_sources": {
+        "long_runs": 18,
+        "push_laps": 5,
+        "field_average": 7
+      }
+    },
+    {
+      "season": 2022,
+      "event": "Australian Grand Prix",
+      "circuit": "Melbourne",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 17.598599999999998,
+      "pit_loss_seasons": [],
+      "estimated_pit_loss": true,
+      "actual_stops": 21,
+      "summary": {
+        "scoreable_drivers": 17,
+        "top_1_credit": 5.666666666666667,
+        "top_3_credit": 11.5,
+        "stop_window_hits": 14
+      },
+      "degradation_sources": {
+        "field_average": 10,
+        "long_runs": 18,
+        "push_laps": 2
+      }
+    },
+    {
+      "season": 2022,
+      "event": "Miami Grand Prix",
+      "circuit": "Miami",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 20.475,
+      "pit_loss_seasons": [],
+      "estimated_pit_loss": true,
+      "actual_stops": 18,
+      "summary": {
+        "scoreable_drivers": 14,
+        "top_1_credit": 2.0,
+        "top_3_credit": 6.5,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "push_laps": 6,
+        "long_runs": 11,
+        "field_average": 10
+      }
+    },
+    {
+      "season": 2022,
+      "event": "Spanish Grand Prix",
+      "circuit": "Barcelona",
+      "is_sprint_weekend": false,
+      "neutralised_race": false,
+      "pit_loss": 22.935000000000002,
+      "pit_loss_seasons": [
+        2021
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 51,
+      "summary": {
+        "scoreable_drivers": 18,
+        "top_1_credit": 0.0,
+        "top_3_credit": 0.0,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "long_runs": 21,
+        "field_average": 8,
+        "push_laps": 1
+      }
+    },
+    {
+      "season": 2022,
+      "event": "Azerbaijan Grand Prix",
+      "circuit": "Baku",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 23.904999999999987,
+      "pit_loss_seasons": [
+        2021
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 23,
+      "summary": {
+        "scoreable_drivers": 15,
+        "top_1_credit": 3.0,
+        "top_3_credit": 6.0,
+        "stop_window_hits": 6
+      },
+      "degradation_sources": {
+        "long_runs": 14,
+        "field_average": 10,
+        "push_laps": 6
+      }
+    },
+    {
+      "season": 2022,
+      "event": "Canadian Grand Prix",
+      "circuit": "Montr\u00e9al",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 21.240000000000002,
+      "pit_loss_seasons": [],
+      "estimated_pit_loss": true,
+      "actual_stops": 30,
+      "summary": {
+        "scoreable_drivers": 17,
+        "top_1_credit": 2.5,
+        "top_3_credit": 6.333333333333333,
+        "stop_window_hits": 2
+      },
+      "degradation_sources": {
+        "field_average": 10,
+        "long_runs": 14,
+        "push_laps": 6
+      }
+    },
+    {
+      "season": 2022,
+      "event": "British Grand Prix",
+      "circuit": "Silverstone",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 19.65599999999999,
+      "pit_loss_seasons": [
+        2021
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 42,
+      "summary": {
+        "scoreable_drivers": 14,
+        "top_1_credit": 0.0,
+        "top_3_credit": 0.0,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "long_runs": 14,
+        "field_average": 11,
+        "push_laps": 5
+      }
+    },
+    {
+      "season": 2022,
+      "event": "Austrian Grand Prix",
+      "circuit": "Spielberg",
+      "is_sprint_weekend": true,
+      "neutralised_race": true,
+      "pit_loss": 20.93500000000001,
+      "pit_loss_seasons": [
+        2021
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 26,
+      "summary": {
+        "scoreable_drivers": 16,
+        "top_1_credit": 0.0,
+        "top_3_credit": 0.0,
+        "stop_window_hits": 4
+      },
+      "degradation_sources": {
+        "long_runs": 20,
+        "next_softer_bound": 10
+      }
+    },
+    {
+      "season": 2022,
+      "event": "French Grand Prix",
+      "circuit": "Le Castellet",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 23.233999999999995,
+      "pit_loss_seasons": [
+        2021
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 20,
+      "summary": {
+        "scoreable_drivers": 16,
+        "top_1_credit": 6.0,
+        "top_3_credit": 12.0,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "long_runs": 18,
+        "field_average": 12
+      }
+    },
+    {
+      "season": 2022,
+      "event": "Hungarian Grand Prix",
+      "circuit": "Budapest",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 21.531000000000006,
+      "pit_loss_seasons": [
+        2021
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 39,
+      "summary": {
+        "scoreable_drivers": 18,
+        "top_1_credit": 0.0,
+        "top_3_credit": 0.0,
+        "stop_window_hits": 6
+      },
+      "degradation_sources": {
+        "long_runs": 20,
+        "field_average": 9,
+        "push_laps": 1
+      }
+    },
+    {
+      "season": 2022,
+      "event": "Belgian Grand Prix",
+      "circuit": "Spa-Francorchamps",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 28.9818,
+      "pit_loss_seasons": [],
+      "estimated_pit_loss": true,
+      "actual_stops": 34,
+      "summary": {
+        "scoreable_drivers": 16,
+        "top_1_credit": 0.0,
+        "top_3_credit": 0.0,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "long_runs": 8,
+        "field_average": 16,
+        "push_laps": 3
+      }
+    },
+    {
+      "season": 2022,
+      "event": "Dutch Grand Prix",
+      "circuit": "Zandvoort",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 22.156999999999996,
+      "pit_loss_seasons": [
+        2021
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 67,
+      "summary": {
+        "scoreable_drivers": 18,
+        "top_1_credit": 0.0,
+        "top_3_credit": 0.0,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "long_runs": 22,
+        "push_laps": 3,
+        "field_average": 5
+      }
+    },
+    {
+      "season": 2022,
+      "event": "Italian Grand Prix",
+      "circuit": "Monza",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 25.829000000000008,
+      "pit_loss_seasons": [
+        2021
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 26,
+      "summary": {
+        "scoreable_drivers": 16,
+        "top_1_credit": 0.16666666666666666,
+        "top_3_credit": 2.25,
+        "stop_window_hits": 1
+      },
+      "degradation_sources": {
+        "long_runs": 26,
+        "push_laps": 2,
+        "field_average": 2
+      }
+    },
+    {
+      "season": 2022,
+      "event": "United States Grand Prix",
+      "circuit": "Austin",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 21.105000000000018,
+      "pit_loss_seasons": [
+        2021
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 32,
+      "summary": {
+        "scoreable_drivers": 16,
+        "top_1_credit": 2.0,
+        "top_3_credit": 6.0,
+        "stop_window_hits": 2
+      },
+      "degradation_sources": {
+        "long_runs": 14,
+        "field_average": 15,
+        "push_laps": 1
+      }
+    },
+    {
+      "season": 2022,
+      "event": "Mexico City Grand Prix",
+      "circuit": "Mexico City",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 22.964,
+      "pit_loss_seasons": [
+        2021
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 21,
+      "summary": {
+        "scoreable_drivers": 18,
+        "top_1_credit": 2.5,
+        "top_3_credit": 6.0,
+        "stop_window_hits": 4
+      },
+      "degradation_sources": {
+        "long_runs": 13,
+        "field_average": 11,
+        "push_laps": 6
+      }
+    },
+    {
+      "season": 2022,
+      "event": "S\u00e3o Paulo Grand Prix",
+      "circuit": "S\u00e3o Paulo",
+      "is_sprint_weekend": true,
+      "neutralised_race": true,
+      "pit_loss": 21.646000000000015,
+      "pit_loss_seasons": [
+        2021
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 39,
+      "summary": {
+        "scoreable_drivers": 16,
+        "top_1_credit": 0.0,
+        "top_3_credit": 0.0,
+        "stop_window_hits": 3
+      },
+      "degradation_sources": {
+        "long_runs": 25,
+        "field_average": 3,
+        "push_laps": 2
+      }
+    },
+    {
+      "season": 2022,
+      "event": "Abu Dhabi Grand Prix",
+      "circuit": "Yas Island",
+      "is_sprint_weekend": false,
+      "neutralised_race": false,
+      "pit_loss": 22.896,
+      "pit_loss_seasons": [
+        2021
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 27,
+      "summary": {
+        "scoreable_drivers": 17,
+        "top_1_credit": 2.1666666666666665,
+        "top_3_credit": 6.0,
+        "stop_window_hits": 8
+      },
+      "degradation_sources": {
+        "field_average": 11,
+        "long_runs": 17,
+        "push_laps": 2
+      }
+    },
+    {
+      "season": 2023,
+      "event": "Bahrain Grand Prix",
+      "circuit": "Sakhir",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 24.219000000000023,
+      "pit_loss_seasons": [
+        2022
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 45,
+      "summary": {
+        "scoreable_drivers": 17,
+        "top_1_credit": 0.0,
+        "top_3_credit": 0.0,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "long_runs": 16,
+        "field_average": 12,
+        "push_laps": 2
+      }
+    },
+    {
+      "season": 2023,
+      "event": "Saudi Arabian Grand Prix",
+      "circuit": "Jeddah",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 23.763999999999996,
+      "pit_loss_seasons": [
+        2022
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 22,
+      "summary": {
+        "scoreable_drivers": 18,
+        "top_1_credit": 6.0,
+        "top_3_credit": 12.5,
+        "stop_window_hits": 6
+      },
+      "degradation_sources": {
+        "long_runs": 23,
+        "push_laps": 6,
+        "field_average": 1
+      }
+    },
+    {
+      "season": 2023,
+      "event": "Australian Grand Prix",
+      "circuit": "Melbourne",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 23.023999999999972,
+      "pit_loss_seasons": [
+        2022
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 35,
+      "summary": {
+        "scoreable_drivers": 10,
+        "top_1_credit": 0.0,
+        "top_3_credit": 0.0,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "push_laps": 21,
+        "long_runs": 7,
+        "field_average": 2
+      }
+    },
+    {
+      "season": 2023,
+      "event": "Azerbaijan Grand Prix",
+      "circuit": "Baku",
+      "is_sprint_weekend": true,
+      "neutralised_race": true,
+      "pit_loss": 25.795000000000016,
+      "pit_loss_seasons": [
+        2022
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 22,
+      "summary": {
+        "scoreable_drivers": 18,
+        "top_1_credit": 6.0,
+        "top_3_credit": 12.5,
+        "stop_window_hits": 6
+      },
+      "degradation_sources": {
+        "push_laps": 6,
+        "long_runs": 13,
+        "field_average": 11
+      }
+    },
+    {
+      "season": 2023,
+      "event": "Miami Grand Prix",
+      "circuit": "Miami",
+      "is_sprint_weekend": false,
+      "neutralised_race": false,
+      "pit_loss": 21.77900000000001,
+      "pit_loss_seasons": [
+        2022
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 20,
+      "summary": {
+        "scoreable_drivers": 20,
+        "top_1_credit": 6.833333333333333,
+        "top_3_credit": 16.0,
+        "stop_window_hits": 11
+      },
+      "degradation_sources": {
+        "long_runs": 11,
+        "push_laps": 17,
+        "field_average": 2
+      }
+    },
+    {
+      "season": 2023,
+      "event": "Spanish Grand Prix",
+      "circuit": "Barcelona",
+      "is_sprint_weekend": false,
+      "neutralised_race": false,
+      "pit_loss": 22.760000000000005,
+      "pit_loss_seasons": [
+        2022
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 43,
+      "summary": {
+        "scoreable_drivers": 20,
+        "top_1_credit": 0.0,
+        "top_3_credit": 0.3333333333333333,
+        "stop_window_hits": 1
+      },
+      "degradation_sources": {
+        "long_runs": 16,
+        "field_average": 10,
+        "push_laps": 4
+      }
+    },
+    {
+      "season": 2023,
+      "event": "Canadian Grand Prix",
+      "circuit": "Montr\u00e9al",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 19.479000000000013,
+      "pit_loss_seasons": [
+        2022
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 32,
+      "summary": {
+        "scoreable_drivers": 18,
+        "top_1_credit": 1.5,
+        "top_3_credit": 3.1666666666666665,
+        "stop_window_hits": 10
+      },
+      "degradation_sources": {
+        "push_laps": 7,
+        "long_runs": 12,
+        "field_average": 11
+      }
+    },
+    {
+      "season": 2023,
+      "event": "Austrian Grand Prix",
+      "circuit": "Spielberg",
+      "is_sprint_weekend": true,
+      "neutralised_race": true,
+      "pit_loss": 21.74499999999999,
+      "pit_loss_seasons": [
+        2022
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 61,
+      "summary": {
+        "scoreable_drivers": 19,
+        "top_1_credit": 0.0,
+        "top_3_credit": 0.0,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "push_laps": 6,
+        "long_runs": 12,
+        "field_average": 12
+      }
+    },
+    {
+      "season": 2023,
+      "event": "British Grand Prix",
+      "circuit": "Silverstone",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 22.79600000000002,
+      "pit_loss_seasons": [
+        2022
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 23,
+      "summary": {
+        "scoreable_drivers": 17,
+        "top_1_credit": 2.5,
+        "top_3_credit": 5.5,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "long_runs": 25,
+        "push_laps": 4,
+        "field_average": 1
+      }
+    },
+    {
+      "season": 2023,
+      "event": "Italian Grand Prix",
+      "circuit": "Monza",
+      "is_sprint_weekend": false,
+      "neutralised_race": false,
+      "pit_loss": 25.721999999999994,
+      "pit_loss_seasons": [
+        2022
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 24,
+      "summary": {
+        "scoreable_drivers": 18,
+        "top_1_credit": 1.5,
+        "top_3_credit": 3.25,
+        "stop_window_hits": 3
+      },
+      "degradation_sources": {
+        "long_runs": 16,
+        "field_average": 5,
+        "push_laps": 9
+      }
+    },
+    {
+      "season": 2023,
+      "event": "Singapore Grand Prix",
+      "circuit": "Marina Bay",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 35.15799999999999,
+      "pit_loss_seasons": [
+        2022
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 21,
+      "summary": {
+        "scoreable_drivers": 15,
+        "top_1_credit": 4.0,
+        "top_3_credit": 8.0,
+        "stop_window_hits": 2
+      },
+      "degradation_sources": {
+        "field_average": 3,
+        "long_runs": 18,
+        "push_laps": 9
+      }
+    },
+    {
+      "season": 2023,
+      "event": "Japanese Grand Prix",
+      "circuit": "Suzuka",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 29.351999999999975,
+      "pit_loss_seasons": [
+        2022
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 31,
+      "summary": {
+        "scoreable_drivers": 15,
+        "top_1_credit": 0.5,
+        "top_3_credit": 1.0,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "long_runs": 17,
+        "field_average": 9,
+        "push_laps": 4
+      }
+    },
+    {
+      "season": 2023,
+      "event": "United States Grand Prix",
+      "circuit": "Austin",
+      "is_sprint_weekend": true,
+      "neutralised_race": false,
+      "pit_loss": 21.141000000000005,
+      "pit_loss_seasons": [
+        2022
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 34,
+      "summary": {
+        "scoreable_drivers": 17,
+        "top_1_credit": 0.5,
+        "top_3_credit": 1.0,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "long_runs": 14,
+        "push_laps": 2,
+        "field_average": 14
+      }
+    },
+    {
+      "season": 2023,
+      "event": "Mexico City Grand Prix",
+      "circuit": "Mexico City",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 23.26099999999998,
+      "pit_loss_seasons": [
+        2022
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 31,
+      "summary": {
+        "scoreable_drivers": 15,
+        "top_1_credit": 1.0,
+        "top_3_credit": 3.0,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "long_runs": 21,
+        "push_laps": 6,
+        "field_average": 3
+      }
+    },
+    {
+      "season": 2023,
+      "event": "S\u00e3o Paulo Grand Prix",
+      "circuit": "S\u00e3o Paulo",
+      "is_sprint_weekend": true,
+      "neutralised_race": true,
+      "pit_loss": 22.25699999999999,
+      "pit_loss_seasons": [
+        2022
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 57,
+      "summary": {
+        "scoreable_drivers": 14,
+        "top_1_credit": 0.0,
+        "top_3_credit": 0.0,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "long_runs": 19,
+        "field_average": 5,
+        "push_laps": 6
+      }
+    },
+    {
+      "season": 2023,
+      "event": "Las Vegas Grand Prix",
+      "circuit": "Las Vegas",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 21.240000000000002,
+      "pit_loss_seasons": [],
+      "estimated_pit_loss": true,
+      "actual_stops": 27,
+      "summary": {
+        "scoreable_drivers": 17,
+        "top_1_credit": 1.3333333333333333,
+        "top_3_credit": 3.25,
+        "stop_window_hits": 1
+      },
+      "degradation_sources": {
+        "push_laps": 8,
+        "long_runs": 15,
+        "field_average": 7
+      }
+    },
+    {
+      "season": 2023,
+      "event": "Abu Dhabi Grand Prix",
+      "circuit": "Yas Island",
+      "is_sprint_weekend": false,
+      "neutralised_race": false,
+      "pit_loss": 24.068000000000012,
+      "pit_loss_seasons": [
+        2022
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 35,
+      "summary": {
+        "scoreable_drivers": 19,
+        "top_1_credit": 2.6666666666666665,
+        "top_3_credit": 8.333333333333334,
+        "stop_window_hits": 12
+      },
+      "degradation_sources": {
+        "long_runs": 15,
+        "field_average": 13,
+        "push_laps": 2
+      }
+    },
+    {
+      "season": 2024,
+      "event": "Bahrain Grand Prix",
+      "circuit": "Sakhir",
+      "is_sprint_weekend": false,
+      "neutralised_race": false,
+      "pit_loss": 25.491666666666674,
+      "pit_loss_seasons": [
+        2022,
+        2023
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 43,
+      "summary": {
+        "scoreable_drivers": 20,
+        "top_1_credit": 0.3333333333333333,
+        "top_3_credit": 1.0,
+        "stop_window_hits": 5
+      },
+      "degradation_sources": {
+        "long_runs": 17,
+        "circuit_history": 10,
+        "push_laps": 3
+      }
+    },
+    {
+      "season": 2024,
+      "event": "Saudi Arabian Grand Prix",
+      "circuit": "Jeddah",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 22.63800000000001,
+      "pit_loss_seasons": [
+        2022,
+        2023
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 19,
+      "summary": {
+        "scoreable_drivers": 18,
+        "top_1_credit": 4.0,
+        "top_3_credit": 9.0,
+        "stop_window_hits": 9
+      },
+      "degradation_sources": {
+        "push_laps": 11,
+        "long_runs": 18,
+        "field_average": 1
+      }
+    },
+    {
+      "season": 2024,
+      "event": "Australian Grand Prix",
+      "circuit": "Melbourne",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 21.582666666666654,
+      "pit_loss_seasons": [
+        2022,
+        2023
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 33,
+      "summary": {
+        "scoreable_drivers": 16,
+        "top_1_credit": 0.0,
+        "top_3_credit": 0.0,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "push_laps": 8,
+        "long_runs": 11,
+        "circuit_history": 10,
+        "field_average": 1
+      }
+    },
+    {
+      "season": 2024,
+      "event": "Japanese Grand Prix",
+      "circuit": "Suzuka",
+      "is_sprint_weekend": false,
+      "neutralised_race": false,
+      "pit_loss": 24.98666666666665,
+      "pit_loss_seasons": [
+        2022,
+        2023
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 51,
+      "summary": {
+        "scoreable_drivers": 17,
+        "top_1_credit": 0.0,
+        "top_3_credit": 0.0,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "push_laps": 8,
+        "long_runs": 15,
+        "field_average": 7
+      }
+    },
+    {
+      "season": 2024,
+      "event": "Monaco Grand Prix",
+      "circuit": "Monaco",
+      "is_sprint_weekend": false,
+      "neutralised_race": false,
+      "pit_loss": 38.891333333333336,
+      "pit_loss_seasons": [
+        2022,
+        2023
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 23,
+      "summary": {
+        "scoreable_drivers": 16,
+        "top_1_credit": 2.5,
+        "top_3_credit": 5.25,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "push_laps": 20,
+        "long_runs": 10
+      }
+    },
+    {
+      "season": 2024,
+      "event": "Spanish Grand Prix",
+      "circuit": "Barcelona",
+      "is_sprint_weekend": false,
+      "neutralised_race": false,
+      "pit_loss": 23.744666666666674,
+      "pit_loss_seasons": [
+        2022,
+        2023
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 42,
+      "summary": {
+        "scoreable_drivers": 20,
+        "top_1_credit": 0.0,
+        "top_3_credit": 0.0,
+        "stop_window_hits": 1
+      },
+      "degradation_sources": {
+        "long_runs": 21,
+        "field_average": 3,
+        "push_laps": 6
+      }
+    },
+    {
+      "season": 2024,
+      "event": "Austrian Grand Prix",
+      "circuit": "Spielberg",
+      "is_sprint_weekend": true,
+      "neutralised_race": true,
+      "pit_loss": 21.659666666666677,
+      "pit_loss_seasons": [
+        2022,
+        2023
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 45,
+      "summary": {
+        "scoreable_drivers": 20,
+        "top_1_credit": 2.0,
+        "top_3_credit": 8.0,
+        "stop_window_hits": 11
+      },
+      "degradation_sources": {
+        "field_average": 14,
+        "long_runs": 16
+      }
+    },
+    {
+      "season": 2024,
+      "event": "Hungarian Grand Prix",
+      "circuit": "Budapest",
+      "is_sprint_weekend": false,
+      "neutralised_race": false,
+      "pit_loss": 22.566999999999993,
+      "pit_loss_seasons": [
+        2022,
+        2023
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 39,
+      "summary": {
+        "scoreable_drivers": 19,
+        "top_1_credit": 3.0,
+        "top_3_credit": 9.0,
+        "stop_window_hits": 12
+      },
+      "degradation_sources": {
+        "field_average": 11,
+        "long_runs": 17,
+        "push_laps": 2
+      }
+    },
+    {
+      "season": 2024,
+      "event": "Belgian Grand Prix",
+      "circuit": "Spa-Francorchamps",
+      "is_sprint_weekend": false,
+      "neutralised_race": false,
+      "pit_loss": 19.080666666666676,
+      "pit_loss_seasons": [
+        2022,
+        2023
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 37,
+      "summary": {
+        "scoreable_drivers": 18,
+        "top_1_credit": 0.0,
+        "top_3_credit": 0.5,
+        "stop_window_hits": 9
+      },
+      "degradation_sources": {
+        "long_runs": 18,
+        "field_average": 6,
+        "push_laps": 6
+      }
+    },
+    {
+      "season": 2024,
+      "event": "Dutch Grand Prix",
+      "circuit": "Zandvoort",
+      "is_sprint_weekend": false,
+      "neutralised_race": false,
+      "pit_loss": 30.558333333333326,
+      "pit_loss_seasons": [
+        2022,
+        2023
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 26,
+      "summary": {
+        "scoreable_drivers": 20,
+        "top_1_credit": 4.333333333333333,
+        "top_3_credit": 9.0,
+        "stop_window_hits": 2
+      },
+      "degradation_sources": {
+        "long_runs": 15,
+        "field_average": 10,
+        "push_laps": 5
+      }
+    },
+    {
+      "season": 2024,
+      "event": "Italian Grand Prix",
+      "circuit": "Monza",
+      "is_sprint_weekend": false,
+      "neutralised_race": false,
+      "pit_loss": 25.543999999999986,
+      "pit_loss_seasons": [
+        2022,
+        2023
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 30,
+      "summary": {
+        "scoreable_drivers": 19,
+        "top_1_credit": 2.3333333333333335,
+        "top_3_credit": 6.666666666666667,
+        "stop_window_hits": 10
+      },
+      "degradation_sources": {
+        "long_runs": 15,
+        "circuit_history": 10,
+        "push_laps": 3,
+        "field_average": 2
+      }
+    },
+    {
+      "season": 2024,
+      "event": "Azerbaijan Grand Prix",
+      "circuit": "Baku",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 24.071000000000016,
+      "pit_loss_seasons": [
+        2022,
+        2023
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 17,
+      "summary": {
+        "scoreable_drivers": 16,
+        "top_1_credit": 1.5,
+        "top_3_credit": 3.75,
+        "stop_window_hits": 1
+      },
+      "degradation_sources": {
+        "push_laps": 8,
+        "field_average": 13,
+        "long_runs": 9
+      }
+    },
+    {
+      "season": 2024,
+      "event": "Singapore Grand Prix",
+      "circuit": "Marina Bay",
+      "is_sprint_weekend": false,
+      "neutralised_race": false,
+      "pit_loss": 31.87799999999998,
+      "pit_loss_seasons": [
+        2022,
+        2023
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 20,
+      "summary": {
+        "scoreable_drivers": 18,
+        "top_1_credit": 4.0,
+        "top_3_credit": 8.0,
+        "stop_window_hits": 2
+      },
+      "degradation_sources": {
+        "push_laps": 12,
+        "long_runs": 15,
+        "field_average": 3
+      }
+    },
+    {
+      "season": 2024,
+      "event": "United States Grand Prix",
+      "circuit": "Austin",
+      "is_sprint_weekend": true,
+      "neutralised_race": true,
+      "pit_loss": 21.436999999999998,
+      "pit_loss_seasons": [
+        2022,
+        2023
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 23,
+      "summary": {
+        "scoreable_drivers": 19,
+        "top_1_credit": 5.5,
+        "top_3_credit": 11.0,
+        "stop_window_hits": 2
+      },
+      "degradation_sources": {
+        "field_average": 5,
+        "long_runs": 17,
+        "push_laps": 8
+      }
+    },
+    {
+      "season": 2024,
+      "event": "Mexico City Grand Prix",
+      "circuit": "Mexico City",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 22.18833333333333,
+      "pit_loss_seasons": [
+        2022,
+        2023
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 21,
+      "summary": {
+        "scoreable_drivers": 17,
+        "top_1_credit": 3.5,
+        "top_3_credit": 7.0,
+        "stop_window_hits": 2
+      },
+      "degradation_sources": {
+        "push_laps": 8,
+        "field_average": 10,
+        "long_runs": 12
+      }
+    },
+    {
+      "season": 2024,
+      "event": "Las Vegas Grand Prix",
+      "circuit": "Las Vegas",
+      "is_sprint_weekend": false,
+      "neutralised_race": false,
+      "pit_loss": 25.66800000000002,
+      "pit_loss_seasons": [
+        2023
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 37,
+      "summary": {
+        "scoreable_drivers": 18,
+        "top_1_credit": 0.0,
+        "top_3_credit": 0.25,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "push_laps": 13,
+        "long_runs": 7,
+        "circuit_history": 10
+      }
+    },
+    {
+      "season": 2024,
+      "event": "Qatar Grand Prix",
+      "circuit": "Lusail",
+      "is_sprint_weekend": true,
+      "neutralised_race": true,
+      "pit_loss": 29.519999999999982,
+      "pit_loss_seasons": [
+        2023
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 51,
+      "summary": {
+        "scoreable_drivers": 15,
+        "top_1_credit": 0.0,
+        "top_3_credit": 0.0,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "push_laps": 5,
+        "long_runs": 12,
+        "field_average": 13
+      }
+    },
+    {
+      "season": 2024,
+      "event": "Abu Dhabi Grand Prix",
+      "circuit": "Yas Island",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 23.21466666666667,
+      "pit_loss_seasons": [
+        2022,
+        2023
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 23,
+      "summary": {
+        "scoreable_drivers": 16,
+        "top_1_credit": 0.3333333333333333,
+        "top_3_credit": 1.0,
+        "stop_window_hits": 1
+      },
+      "degradation_sources": {
+        "field_average": 15,
+        "long_runs": 13,
+        "push_laps": 2
+      }
+    },
+    {
+      "season": 2025,
+      "event": "Chinese Grand Prix",
+      "circuit": "Shanghai",
+      "is_sprint_weekend": true,
+      "neutralised_race": false,
+      "pit_loss": 23.47,
+      "pit_loss_seasons": [
+        2024
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 21,
+      "summary": {
+        "scoreable_drivers": 16,
+        "top_1_credit": 0.0,
+        "top_3_credit": 0.0,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "circuit_history": 20,
+        "long_runs": 10
+      }
+    },
+    {
+      "season": 2025,
+      "event": "Japanese Grand Prix",
+      "circuit": "Suzuka",
+      "is_sprint_weekend": false,
+      "neutralised_race": false,
+      "pit_loss": 23.73485714285714,
+      "pit_loss_seasons": [
+        2022,
+        2023,
+        2024
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 21,
+      "summary": {
+        "scoreable_drivers": 20,
+        "top_1_credit": 3.5,
+        "top_3_credit": 7.25,
+        "stop_window_hits": 6
+      },
+      "degradation_sources": {
+        "long_runs": 15,
+        "field_average": 9,
+        "push_laps": 6
+      }
+    },
+    {
+      "season": 2025,
+      "event": "Bahrain Grand Prix",
+      "circuit": "Sakhir",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 25.144428571428584,
+      "pit_loss_seasons": [
+        2022,
+        2023,
+        2024
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 37,
+      "summary": {
+        "scoreable_drivers": 18,
+        "top_1_credit": 0.3333333333333333,
+        "top_3_credit": 1.0,
+        "stop_window_hits": 4
+      },
+      "degradation_sources": {
+        "long_runs": 20,
+        "field_average": 7,
+        "push_laps": 3
+      }
+    },
+    {
+      "season": 2025,
+      "event": "Saudi Arabian Grand Prix",
+      "circuit": "Jeddah",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 21.244857142857143,
+      "pit_loss_seasons": [
+        2022,
+        2023,
+        2024
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 19,
+      "summary": {
+        "scoreable_drivers": 18,
+        "top_1_credit": 6.0,
+        "top_3_credit": 12.0,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "long_runs": 12,
+        "field_average": 12,
+        "push_laps": 6
+      }
+    },
+    {
+      "season": 2025,
+      "event": "Miami Grand Prix",
+      "circuit": "Miami Gardens",
+      "is_sprint_weekend": true,
+      "neutralised_race": true,
+      "pit_loss": 20.954714285714278,
+      "pit_loss_seasons": [
+        2022,
+        2023,
+        2024
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 16,
+      "summary": {
+        "scoreable_drivers": 16,
+        "top_1_credit": 4.0,
+        "top_3_credit": 8.5,
+        "stop_window_hits": 4
+      },
+      "degradation_sources": {
+        "long_runs": 14,
+        "field_average": 15,
+        "push_laps": 1
+      }
+    },
+    {
+      "season": 2025,
+      "event": "Monaco Grand Prix",
+      "circuit": "Monaco",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 26.891142857142853,
+      "pit_loss_seasons": [
+        2022,
+        2023,
+        2024
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 37,
+      "summary": {
+        "scoreable_drivers": 18,
+        "top_1_credit": 0.3333333333333333,
+        "top_3_credit": 1.0,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "push_laps": 18,
+        "field_average": 5,
+        "long_runs": 7
+      }
+    },
+    {
+      "season": 2025,
+      "event": "Spanish Grand Prix",
+      "circuit": "Barcelona",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 23.290000000000003,
+      "pit_loss_seasons": [
+        2022,
+        2023,
+        2024
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 50,
+      "summary": {
+        "scoreable_drivers": 17,
+        "top_1_credit": 0.0,
+        "top_3_credit": 0.0,
+        "stop_window_hits": 2
+      },
+      "degradation_sources": {
+        "long_runs": 20,
+        "push_laps": 4,
+        "field_average": 6
+      }
+    },
+    {
+      "season": 2025,
+      "event": "Canadian Grand Prix",
+      "circuit": "Montr\u00e9al",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 20.730428571428572,
+      "pit_loss_seasons": [
+        2022,
+        2023,
+        2024
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 78,
+      "summary": {
+        "scoreable_drivers": 17,
+        "top_1_credit": 0.0,
+        "top_3_credit": 0.0,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "long_runs": 17,
+        "field_average": 9,
+        "push_laps": 4
+      }
+    },
+    {
+      "season": 2025,
+      "event": "Austrian Grand Prix",
+      "circuit": "Spielberg",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 21.448428571428572,
+      "pit_loss_seasons": [
+        2022,
+        2023,
+        2024
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 31,
+      "summary": {
+        "scoreable_drivers": 16,
+        "top_1_credit": 1.6666666666666665,
+        "top_3_credit": 4.333333333333333,
+        "stop_window_hits": 3
+      },
+      "degradation_sources": {
+        "push_laps": 5,
+        "long_runs": 23,
+        "field_average": 2
+      }
+    },
+    {
+      "season": 2025,
+      "event": "Hungarian Grand Prix",
+      "circuit": "Budapest",
+      "is_sprint_weekend": false,
+      "neutralised_race": false,
+      "pit_loss": 21.418428571428574,
+      "pit_loss_seasons": [
+        2022,
+        2023,
+        2024
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 28,
+      "summary": {
+        "scoreable_drivers": 19,
+        "top_1_credit": 3.1666666666666665,
+        "top_3_credit": 8.0,
+        "stop_window_hits": 7
+      },
+      "degradation_sources": {
+        "long_runs": 21,
+        "field_average": 7,
+        "push_laps": 2
+      }
+    },
+    {
+      "season": 2025,
+      "event": "Dutch Grand Prix",
+      "circuit": "Zandvoort",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 26.857000000000006,
+      "pit_loss_seasons": [
+        2022,
+        2023,
+        2024
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 36,
+      "summary": {
+        "scoreable_drivers": 17,
+        "top_1_credit": 0.0,
+        "top_3_credit": 0.5,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "field_average": 5,
+        "long_runs": 19,
+        "push_laps": 6
+      }
+    },
+    {
+      "season": 2025,
+      "event": "Italian Grand Prix",
+      "circuit": "Monza",
+      "is_sprint_weekend": false,
+      "neutralised_race": false,
+      "pit_loss": 26.294857142857147,
+      "pit_loss_seasons": [
+        2022,
+        2023,
+        2024
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 18,
+      "summary": {
+        "scoreable_drivers": 18,
+        "top_1_credit": 6.0,
+        "top_3_credit": 12.0,
+        "stop_window_hits": 2
+      },
+      "degradation_sources": {
+        "field_average": 7,
+        "long_runs": 13,
+        "push_laps": 10
+      }
+    },
+    {
+      "season": 2025,
+      "event": "Azerbaijan Grand Prix",
+      "circuit": "Baku",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 23.737285714285736,
+      "pit_loss_seasons": [
+        2022,
+        2023,
+        2024
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 21,
+      "summary": {
+        "scoreable_drivers": 19,
+        "top_1_credit": 5.666666666666667,
+        "top_3_credit": 12.5,
+        "stop_window_hits": 16
+      },
+      "degradation_sources": {
+        "push_laps": 13,
+        "field_average": 9,
+        "long_runs": 8
+      }
+    },
+    {
+      "season": 2025,
+      "event": "Singapore Grand Prix",
+      "circuit": "Marina Bay",
+      "is_sprint_weekend": false,
+      "neutralised_race": false,
+      "pit_loss": 30.901384615384618,
+      "pit_loss_seasons": [
+        2022,
+        2023,
+        2024
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 23,
+      "summary": {
+        "scoreable_drivers": 20,
+        "top_1_credit": 4.0,
+        "top_3_credit": 8.75,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "field_average": 3,
+        "long_runs": 13,
+        "push_laps": 14
+      }
+    },
+    {
+      "season": 2025,
+      "event": "United States Grand Prix",
+      "circuit": "Austin",
+      "is_sprint_weekend": true,
+      "neutralised_race": true,
+      "pit_loss": 21.810142857142846,
+      "pit_loss_seasons": [
+        2022,
+        2023,
+        2024
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 21,
+      "summary": {
+        "scoreable_drivers": 19,
+        "top_1_credit": 1.5,
+        "top_3_credit": 3.0,
+        "stop_window_hits": 1
+      },
+      "degradation_sources": {
+        "field_average": 10,
+        "long_runs": 17,
+        "push_laps": 3
+      }
+    },
+    {
+      "season": 2025,
+      "event": "Mexico City Grand Prix",
+      "circuit": "Mexico City",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 23.222428571428573,
+      "pit_loss_seasons": [
+        2022,
+        2023,
+        2024
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 22,
+      "summary": {
+        "scoreable_drivers": 16,
+        "top_1_credit": 0.0,
+        "top_3_credit": 1.0,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "long_runs": 23,
+        "push_laps": 6,
+        "field_average": 1
+      }
+    },
+    {
+      "season": 2025,
+      "event": "S\u00e3o Paulo Grand Prix",
+      "circuit": "S\u00e3o Paulo",
+      "is_sprint_weekend": true,
+      "neutralised_race": true,
+      "pit_loss": 26.3418,
+      "pit_loss_seasons": [
+        2022,
+        2024
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 34,
+      "summary": {
+        "scoreable_drivers": 17,
+        "top_1_credit": 0.5,
+        "top_3_credit": 1.0,
+        "stop_window_hits": 0
+      },
+      "degradation_sources": {
+        "long_runs": 27,
+        "push_laps": 1,
+        "field_average": 2
+      }
+    },
+    {
+      "season": 2025,
+      "event": "Las Vegas Grand Prix",
+      "circuit": "Las Vegas",
+      "is_sprint_weekend": false,
+      "neutralised_race": true,
+      "pit_loss": 23.992666666666675,
+      "pit_loss_seasons": [
+        2023,
+        2024
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 18,
+      "summary": {
+        "scoreable_drivers": 15,
+        "top_1_credit": 3.5,
+        "top_3_credit": 8.0,
+        "stop_window_hits": 9
+      },
+      "degradation_sources": {
+        "push_laps": 13,
+        "field_average": 9,
+        "long_runs": 8
+      }
+    },
+    {
+      "season": 2025,
+      "event": "Qatar Grand Prix",
+      "circuit": "Lusail",
+      "is_sprint_weekend": true,
+      "neutralised_race": true,
+      "pit_loss": 27.501999999999992,
+      "pit_loss_seasons": [
+        2023,
+        2024
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 33,
+      "summary": {
+        "scoreable_drivers": 16,
+        "top_1_credit": 0.0,
+        "top_3_credit": 0.3333333333333333,
+        "stop_window_hits": 1
+      },
+      "degradation_sources": {
+        "push_laps": 5,
+        "long_runs": 21,
+        "field_average": 4
+      }
+    },
+    {
+      "season": 2025,
+      "event": "Abu Dhabi Grand Prix",
+      "circuit": "Yas Island",
+      "is_sprint_weekend": false,
+      "neutralised_race": false,
+      "pit_loss": 24.110285714285713,
+      "pit_loss_seasons": [
+        2022,
+        2023,
+        2024
+      ],
+      "estimated_pit_loss": false,
+      "actual_stops": 27,
+      "summary": {
+        "scoreable_drivers": 20,
+        "top_1_credit": 3.8333333333333335,
+        "top_3_credit": 8.333333333333334,
+        "stop_window_hits": 4
+      },
+      "degradation_sources": {
+        "field_average": 7,
+        "long_runs": 20,
+        "push_laps": 3
+      }
+    }
+  ],
+  "excluded": [
+    {
+      "season": 2022,
+      "event": "Emilia Romagna Grand Prix",
+      "reason": "not a Dry Race",
+      "detail": "2022 Imola is not a Dry Race (race laps on Intermediate); Pre-race Predictions only cover Dry Races."
+    },
+    {
+      "season": 2022,
+      "event": "Monaco Grand Prix",
+      "reason": "not a Dry Race",
+      "detail": "2022 Monaco is not a Dry Race (race laps on Intermediate, Wet); Pre-race Predictions only cover Dry Races."
+    },
+    {
+      "season": 2022,
+      "event": "Singapore Grand Prix",
+      "reason": "not a Dry Race",
+      "detail": "2022 Marina Bay is not a Dry Race (race laps on Intermediate); Pre-race Predictions only cover Dry Races."
+    },
+    {
+      "season": 2022,
+      "event": "Japanese Grand Prix",
+      "reason": "not a Dry Race",
+      "detail": "2022 Suzuka is not a Dry Race (race laps on Intermediate, Wet); Pre-race Predictions only cover Dry Races."
+    },
+    {
+      "season": 2023,
+      "event": "Emilia Romagna Grand Prix",
+      "reason": "data unavailable",
+      "detail": "OpenF1 /v1/session_result returned no rows for race session 9086; cannot derive race_laps"
+    },
+    {
+      "season": 2023,
+      "event": "Monaco Grand Prix",
+      "reason": "not a Dry Race",
+      "detail": "2023 Monaco is not a Dry Race (race laps on Intermediate, Wet); Pre-race Predictions only cover Dry Races."
+    },
+    {
+      "season": 2023,
+      "event": "Hungarian Grand Prix",
+      "reason": "data unavailable",
+      "detail": "int() argument must be a string, a bytes-like object or a real number, not 'NoneType'"
+    },
+    {
+      "season": 2023,
+      "event": "Belgian Grand Prix",
+      "reason": "data unavailable",
+      "detail": "int() argument must be a string, a bytes-like object or a real number, not 'NoneType'"
+    },
+    {
+      "season": 2023,
+      "event": "Dutch Grand Prix",
+      "reason": "not a Dry Race",
+      "detail": "2023 Zandvoort is not a Dry Race (race laps on Intermediate, Wet); Pre-race Predictions only cover Dry Races."
+    },
+    {
+      "season": 2023,
+      "event": "Qatar Grand Prix",
+      "reason": "data unavailable",
+      "detail": "int() argument must be a string, a bytes-like object or a real number, not 'NoneType'"
+    },
+    {
+      "season": 2024,
+      "event": "Chinese Grand Prix",
+      "reason": "data unavailable",
+      "detail": "no previous seasons' races at 'Shanghai' were available to measure Pit Loss from (looked at 2022..2023 and the pre-era FastF1 range 2018..2021), and 'Shanghai' has no entry in the pit lane table (ticket 07)"
+    },
+    {
+      "season": 2024,
+      "event": "Miami Grand Prix",
+      "reason": "data unavailable",
+      "detail": "int() argument must be a string, a bytes-like object or a real number, not 'NoneType'"
+    },
+    {
+      "season": 2024,
+      "event": "Emilia Romagna Grand Prix",
+      "reason": "data unavailable",
+      "detail": "int() argument must be a string, a bytes-like object or a real number, not 'NoneType'"
+    },
+    {
+      "season": 2024,
+      "event": "Canadian Grand Prix",
+      "reason": "not a Dry Race",
+      "detail": "2024 Montr\u00e9al is not a Dry Race (race laps on Intermediate, Wet); Pre-race Predictions only cover Dry Races."
+    },
+    {
+      "season": 2024,
+      "event": "British Grand Prix",
+      "reason": "not a Dry Race",
+      "detail": "2024 Silverstone is not a Dry Race (race laps on Intermediate); Pre-race Predictions only cover Dry Races."
+    },
+    {
+      "season": 2024,
+      "event": "S\u00e3o Paulo Grand Prix",
+      "reason": "not a Dry Race",
+      "detail": "2024 S\u00e3o Paulo is not a Dry Race (race laps on Intermediate, Wet); Pre-race Predictions only cover Dry Races."
+    },
+    {
+      "season": 2025,
+      "event": "Australian Grand Prix",
+      "reason": "not a Dry Race",
+      "detail": "2025 Melbourne is not a Dry Race (race laps on Intermediate); Pre-race Predictions only cover Dry Races."
+    },
+    {
+      "season": 2025,
+      "event": "Emilia Romagna Grand Prix",
+      "reason": "data unavailable",
+      "detail": "OpenF1 /v1/session_result returned no rows for race session 9086; cannot derive race_laps"
+    },
+    {
+      "season": 2025,
+      "event": "British Grand Prix",
+      "reason": "not a Dry Race",
+      "detail": "2025 Silverstone is not a Dry Race (race laps on Intermediate); Pre-race Predictions only cover Dry Races."
+    },
+    {
+      "season": 2025,
+      "event": "Belgian Grand Prix",
+      "reason": "not a Dry Race",
+      "detail": "2025 Spa-Francorchamps is not a Dry Race (race laps on Intermediate); Pre-race Predictions only cover Dry Races."
+    }
+  ]
+}
