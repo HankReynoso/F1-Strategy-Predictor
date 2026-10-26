@@ -112,6 +112,10 @@ Running Strategy Predictions on past races and scoring them against the Strategi
 A race weekend in a Backtest's scope that produced no scores, because it was refused (not a Dry Race), failed, its data couldn't be loaded, or its data couldn't be fetched (FastF1's rate limit or a network error that persisted after retrying). Every Excluded Race is listed with its reason, and a fetch failure is distinct from a genuine data-unavailable failure.
 _Avoid_: skipped race, failed race
 
+**Cancelled Race**:
+A round on the calendar that was called off and never took place (2023 Emilia Romagna). It is not a race weekend, so it is not an Excluded Race: it is left out of season listings and never read as history for a later race at the circuit.
+_Avoid_: skipped race, missing race
+
 **Held-out Season**:
 The season whose races are never used to tune settings, so its Backtest score shows how the model does on races it wasn't tuned on. Currently 2025; the seasons used for tuning are the **Tuning Seasons** (2022–2024).
 _Avoid_: test set, validation season

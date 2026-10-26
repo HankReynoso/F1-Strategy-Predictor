@@ -106,6 +106,16 @@ class _OpenF1Client(Protocol):
     def get(self, endpoint: str, **params: Any) -> list[dict]: ...
 
 
+class RaceCancelledError(ValueError):
+    """The requested race weekend was called off.
+
+    OpenF1 keeps a cancelled round in ``/v1/meetings`` (2023 Emilia
+    Romagna, meeting 1209) with ``is_cancelled: true`` and no results
+    behind its sessions. It was never a race, so it is neither listed by
+    :func:`list_season` nor read as past-race history (ticket 29).
+    """
+
+
 def load_weekend(
     season: int,
     event: str,
@@ -153,6 +163,11 @@ def load_weekend(
 
     meetings = client.get("meetings", year=season)
     meeting = _find_meeting(meetings, event)
+    if _is_cancelled(meeting):
+        raise RaceCancelledError(
+            f"the {season} {meeting['meeting_name']} was cancelled "
+            f"(OpenF1 meeting {meeting['meeting_key']}): there is no race to load"
+        )
 
     sessions_meta = client.get("sessions", meeting_key=meeting["meeting_key"])
     session_names = {s["session_name"] for s in sessions_meta}
@@ -274,7 +289,7 @@ def list_season(
         client = OpenF1Client(cache_dir=Path(cache_dir))
     meetings = client.get("meetings", year=season)
     races = sorted(
-        (m for m in meetings if _is_race_meeting(m)),
+        (m for m in meetings if _is_race_meeting(m) and not _is_cancelled(m)),
         key=lambda m: m["date_start"],
     )
     specs: list[RaceSpec] = []
@@ -331,6 +346,14 @@ def _is_race_meeting(row: dict) -> bool:
     return "grand prix" in name
 
 
+def _is_cancelled(row: dict) -> bool:
+    """True for a meeting or session OpenF1 flags ``is_cancelled``.
+
+    A missing flag (older fixtures, or rows trimmed of it) counts as held.
+    """
+    return bool(row.get("is_cancelled"))
+
+
 def _round_number(meetings: list[dict], target: dict) -> int:
     """Round number from meeting date order, 1-indexed.
 
@@ -341,7 +364,7 @@ def _round_number(meetings: list[dict], target: dict) -> int:
     ``list_season`` can call it without re-deriving the rule.
     """
     races = sorted(
-        (m for m in meetings if _is_race_meeting(m)),
+        (m for m in meetings if _is_race_meeting(m) and not _is_cancelled(m)),
         key=lambda m: m["date_start"],
     )
     for i, m in enumerate(races, start=1):
@@ -1067,6 +1090,8 @@ def _load_past_race_rows(
     meeting matches (e.g. a 2022 race, outside OpenF1's coverage, which
     ticket 23 routes to FastF1 instead).
 
+    A cancelled meeting or race session also returns ``None`` (ticket 29).
+
     A fetch error (:class:`.openf1_client.OpenF1FetchError`) propagates
     so the Backtest can exclude the race as ``FETCH_FAILED`` (ticket 28);
     only "meeting / race session not in OpenF1" cases return ``None``.
@@ -1079,10 +1104,17 @@ def _load_past_race_rows(
         meeting = _find_meeting(meetings, event)
     except ValueError:
         return None
+    if _is_cancelled(meeting):
+        # Ticket 29: a called-off round has sessions but no results; reading
+        # them used to raise from _race_laps_count and sink the *later*
+        # race whose history scan reached back to it.
+        return None
     sessions_meta = client.get("sessions", meeting_key=meeting["meeting_key"])
     try:
         race_meta = _session_named(sessions_meta, "Race")
     except ValueError:
+        return None
+    if _is_cancelled(race_meta):
         return None
     race_session_key = int(race_meta["session_key"])
     return {

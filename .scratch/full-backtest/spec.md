@@ -85,7 +85,7 @@ The loader changes this needs: history (Historical Degradation, and the inputs f
 
 ## Implementation Decisions
 
-- **Scope.** Every race weekend in the 2022–2025 seasons. Wet and mixed-condition races are refused by the existing predictor and become Excluded Races; handling them is a later version. 2026 races join once there is enough same-era history (ADR-0004); this spec does not add them.
+- **Scope.** Every race weekend in the 2022–2025 seasons. A round that was called off (2023 Emilia Romagna) never took place, so it is not a race weekend: season listings leave it out and loading it directly raises a clear "cancelled" error (ticket 29). Wet and mixed-condition races are refused by the existing predictor and become Excluded Races; handling them is a later version. 2026 races join once there is enough same-era history (ADR-0004); this spec does not add them.
 - **No leakage.** Each race is predicted exactly as a single race is today: `predict()` reads only pre-race information, and every historical input comes from earlier seasons. The Backtest never passes one race's outcome into another race's prediction.
 - **Backtest module (new, deep).** One public call takes: the list of race weekends to run (season + event), a loader function that turns one of them into a race weekend description, and settings. It returns a Backtest Result. For each race it loads, predicts and compares using the existing `predict()` and `compare()` unchanged. Any refusal, error during prediction, or failure to load becomes an Excluded Race and the loop continues. The loader is passed in, as the command already does with its injectable `load`, so tests run on hand-built weekends.
 - **Backtest Result (new data shape).** Holds:

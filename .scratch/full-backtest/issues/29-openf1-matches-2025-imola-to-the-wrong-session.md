@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Category:** bug
 
@@ -16,9 +16,58 @@
 
 Found in the first OpenF1-era baseline (`results/backtest/2026-10-26_baseline.md`, Excluded Races). Likely an event-name or meeting lookup that doesn't filter by year, or a cached response keyed without the season; find the real cause before fixing.
 
-- [ ] The cause is found and recorded (which lookup, which request, what OpenF1 returned)
-- [ ] 2025 Emilia Romagna loads its own 2025 sessions and is scored
-- [ ] A test proves two seasons with the same event name never share a session (fixture-based, no network)
-- [ ] Every 2023–2025 weekend is checked to load sessions from its own season, and the check is recorded
-- [ ] A cancelled race (2023 Emilia Romagna) is an Excluded Race with a reason saying it was cancelled, or is left out of the season listing, with the choice and reasoning recorded
-- [ ] Tests go through the existing load and season-listing calls
+- [x] The cause is found and recorded (which lookup, which request, what OpenF1 returned)
+- [x] 2025 Emilia Romagna loads its own 2025 sessions and is scored
+- [x] A test proves two seasons with the same event name never share a session (fixture-based, no network)
+- [x] Every 2023–2025 weekend is checked to load sessions from its own season, and the check is recorded
+- [x] A cancelled race (2023 Emilia Romagna) is an Excluded Race with a reason saying it was cancelled, or is left out of the season listing, with the choice and reasoning recorded
+- [x] Tests go through the existing load and season-listing calls
+
+## Implementation notes
+
+**What was built (2026-10-26), test-first.**
+
+- `src/f1_strategy/openf1_loader.py`: new `RaceCancelledError(ValueError)` and `_is_cancelled(row)` (reads OpenF1's `is_cancelled`; a missing flag counts as held). `load_weekend` raises `RaceCancelledError` ("the 2023 Emilia Romagna Grand Prix was cancelled (OpenF1 meeting 1209): there is no race to load") before touching any session. `_load_past_race_rows` returns `None` for a cancelled meeting or race session, so the history scan treats it as "nothing to measure". `list_season` and `_round_number` skip cancelled meetings.
+- `tests/fixtures/openf1/imola_2023_2025.json`: recorded rows. Meetings and sessions are real (trimmed) rows for 2023 Imola (cancelled, meeting 1209, race 9086, whose data endpoints really return `[]`), 2024 Imola (1235 / 9515) and 2025 Imola (1260 / 9987), plus Monaco 2023 as a held-race decoy. The lap/stint/pit/driver rows are not Imola data: they are the two-driver Monza rows from `monza_2024.json` re-keyed to Imola's real session keys (the `_about` key says so).
+- `tests/test_openf1_cancelled_races.py`: 8 fast tests, all through `data.load_weekend` / `data.list_season` (plus the loader's own `load_weekend` / `list_season` for the per-season invariant), with a recording client that fails loudly on an unrecorded request.
+- `tests/test_openf1_season_integrity_real_data.py`: 5 slow tests on the real cache (the weekend audit, the 22-race 2023 listing, 2025 Imola).
+
+**The cause (criterion 1).** Not a missing year filter and not a cache keyed without the season. The 2025 *target* load was correct all along: `meetings?year=2025` gives Imola as meeting 1260, `sessions?meeting_key=1260` gives race session 9987. Evidence from `.cache/openf1`:
+
+- `meetings?year=2023` lists `Emilia Romagna Grand Prix`, meeting 1209, official name "CALLED OFF: ...", `is_cancelled: true`. Its five sessions (9079-9082, 9086) are all `is_cancelled: true`.
+- Every data endpoint for session 9086 (`drivers`, `laps`, `stints`, `pit`, `race_control`, `session_result`) is cached as `[]`.
+- No request for any 2025 data session (9980-9987) is in the cache at all: the 2025 load never got that far.
+- Cause: loading 2025 Imola scans earlier same-era seasons for Historical Degradation and Pit Loss (`openf1_loader._past_races_at_circuit` and `data.measure_pit_loss_and_history`). For 2023 that calls `load_past_race_samples`, which found the cancelled meeting by name (`_find_meeting` knew nothing about `is_cancelled`), read the empty `session_result` for 9086 and raised from `_race_laps_count`. Since ticket 28 stopped past-race errors being swallowed, that `ValueError` propagated out of the 2025 load and `run_backtest` recorded it as the 2025 race's "data unavailable". The message names 9086 without saying it was a history fetch for a different season, which is what made it read like a wrong-session match.
+- Reproduced before the fix: `data.load_weekend(2025, "Emilia Romagna Grand Prix")` against the fixture raised exactly the baseline message. The 2023 baseline line has the same message for a different reason: there 9086 really is the target race.
+
+**Criteria.**
+
+- 2025 Imola loads and is scored: a warm-cache `run_backtest([RaceSpec(2025, "Emilia Romagna Grand Prix")], data.load_weekend)` scored 1 race, 18 scoreable drivers, no Excluded Races; Pit Loss 32.78 s from (2022, 2024). The 2024 race's rows weren't cached (the baseline died on 2023 first), so this run fetched them through the real rate-limited client.
+- Fast test proving two seasons never share a session: `test_the_same_event_name_in_two_seasons_resolves_to_its_own_meeting` and `test_2025_imola_reads_only_its_own_sessions_and_never_the_cancelled_one` (the recording client shows only 2025 sessions and the 2024 history race were requested, never 9079-9086).
+- Every 2023-2025 weekend checked (2026-10-26, real cache, now pinned by the slow `test_every_weekend_loads_sessions_from_its_own_season`): 70 held weekends (22 + 24 + 24), 0 wrong-season loads. For each, the meeting resolved by name has `year == season` and every one of its sessions has the same `year` and `meeting_key`, with exactly one `Race`. Meeting names are unique within each season, and the only cancelled meeting in 2023-2025 is 2023 Imola. So there is no other wrong-session case behind the baseline.
+
+**Decisions and alternatives rejected.**
+
+- *Cancelled race: leave it out of the season listing, and raise a clear error on a direct load; no new Excluded Race reason.* The ticket allowed either. A race that never ran isn't a "race weekend in a Backtest's scope" (CONTEXT.md, Excluded Race), so counting it among 20 Excluded Races would inflate the exclusion count with a non-event and make the comparison warning about differing Excluded Races fire on a non-change. FastF1 also lists no cancelled round, so the two sources now agree on the 2023 calendar (22 races). A `CANCELLED` `ExclusionReason` was rejected: it changes the saved Backtest Result format (ADR-0005) and `backtest_compare`, for a case that cannot occur through `list_season`. The risk of leaving it out is that it vanishes silently, so the direct-load error says "cancelled" in words, the glossary has a **Cancelled Race** entry, and the spec's Scope says so.
+- *Skip cancelled meetings in the history scan rather than in `_find_meeting`.* If `_find_meeting` skipped them, `load_weekend(2023, "Emilia Romagna")` would say "no OpenF1 meeting matched", which is the unclear message the ticket complains about.
+- *Check `is_cancelled` on the race session as well as the meeting in the history path.* One extra dictionary read; covers a cancelled race session inside a held meeting.
+- *No wrong-year guard in the loader.* There is no wrong-year path to guard; a speculative check would be untested defensive code. The slow audit is the standing check instead.
+- *`_round_number` skips cancelled meetings*, so it gives the round among races that were held, matching `list_season`'s order. Nothing calls it yet.
+- *Fixture re-keys Monza rows instead of recording real Imola laps.* Real Imola laps would need ~20 more recorded responses and a trimming pass; the invariant under test is which sessions are requested, not the lap content. The `_about` key says so plainly.
+
+**Deviations from the ticket.**
+
+- None to the criteria. Criterion 5 took the "left out of the season listing" option; see above.
+- Spec Scope sentence and CONTEXT.md updated (not an ADR: the decision is cheap to reverse and not surprising once the glossary entry exists).
+
+**Open questions, known limitations and follow-ups.**
+
+- *2024 Emilia Romagna still fails as a target race* with ticket 30's `int(None)` in `_load_pre_race_session` (verified from the warm cache, same traceback as the baseline). It is not part of this ticket. 2025 Imola only needs 2024's *race* rows, which load fine. Ticket 30 owns it.
+- The history warning for a cancelled past race reuses the generic text "no usable past-race samples (fetch succeeded with no rows or no clean laps)", which is wrong for a cancellation. New ticket 32.
+- The baseline in `results/backtest/2026-10-26_baseline.md` is unchanged and still lists both Imola lines. It needs the rerun already planned after tickets 30 and 31 (ticket 24's follow-on); the 2023 line should then be gone and the 2025 line scored.
+- `data.measure_pit_loss_and_history` now yields a `no usable past-race samples` warning for 2023 for every Imola race 2024 onward; harmless but visible in the Backtest Result's history warnings.
+
+**Review feedback to the user.**
+
+- The ticket's guess ("an event-name or meeting lookup that doesn't filter by year, or a cached response keyed without the season") was wrong on both counts; worth knowing before reading similar baseline lines. A "data unavailable" line for race X can come from X's *history* scan reaching an earlier season's race, because ticket 28 made those errors propagate. The line's detail names the failing session, not which season's load was running.
+- 2023 Imola's own baseline line is no longer reachable, because the Backtest takes its races from `list_season`.

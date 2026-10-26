@@ -1,0 +1,786 @@
+{
+ "_about": "Recorded OpenF1 meeting/session rows for Emilia Romagna (Imola) 2023-2025 (ticket 29), trimmed to the fields the loader reads. 2023 meeting 1209 was CALLED OFF (is_cancelled=true, its sessions 9079-9086 are cancelled and every data endpoint for race 9086 returns []). 2024 Imola (meeting 1235, race 9515) and 2025 Imola (meeting 1260, race 9987) are real rows. The lap/stint/pit/driver rows are NOT Imola data: they are the trimmed two-driver Monza rows from monza_2024.json re-keyed to Imola's real session keys (Monza 2024 -> 2025 Imola, Monza 2023 past race -> 2024 Imola) so the fast tests can run a full load. See .scratch/full-backtest/issues/29-*.md.",
+ "meetings?year=2023": [
+  {
+   "meeting_key": 1140,
+   "meeting_name": "Pre-Season Testing",
+   "location": "Sakhir",
+   "country_name": "Bahrain",
+   "date_start": "2023-02-23T07:00:00+00:00",
+   "year": 2023,
+   "is_cancelled": false
+  },
+  {
+   "meeting_key": 1209,
+   "meeting_name": "Emilia Romagna Grand Prix",
+   "location": "Imola",
+   "country_name": "Italy",
+   "date_start": "2023-05-19T11:30:00+00:00",
+   "year": 2023,
+   "is_cancelled": true
+  },
+  {
+   "meeting_key": 1210,
+   "meeting_name": "Monaco Grand Prix",
+   "location": "Monaco",
+   "country_name": "Monaco",
+   "date_start": "2023-05-26T11:30:00+00:00",
+   "year": 2023,
+   "is_cancelled": false
+  }
+ ],
+ "meetings?year=2024": [
+  {
+   "meeting_key": 1228,
+   "meeting_name": "Pre-Season Testing",
+   "location": "Sakhir",
+   "country_name": "Bahrain",
+   "date_start": "2024-02-21T07:00:00+00:00",
+   "year": 2024,
+   "is_cancelled": false
+  },
+  {
+   "meeting_key": 1235,
+   "meeting_name": "Emilia Romagna Grand Prix",
+   "location": "Imola",
+   "country_name": "Italy",
+   "date_start": "2024-05-17T11:30:00+00:00",
+   "year": 2024,
+   "is_cancelled": false
+  }
+ ],
+ "meetings?year=2025": [
+  {
+   "meeting_key": 1253,
+   "meeting_name": "Pre-Season Testing",
+   "location": "Sakhir",
+   "country_name": "Bahrain",
+   "date_start": "2025-02-26T07:00:00+00:00",
+   "year": 2025,
+   "is_cancelled": false
+  },
+  {
+   "meeting_key": 1260,
+   "meeting_name": "Emilia Romagna Grand Prix",
+   "location": "Imola",
+   "country_name": "Italy",
+   "date_start": "2025-05-16T11:30:00+00:00",
+   "year": 2025,
+   "is_cancelled": false
+  }
+ ],
+ "sessions?meeting_key=1209": [
+  {
+   "session_key": 9079,
+   "session_name": "Practice 1",
+   "meeting_key": 1209,
+   "date_start": "2023-05-19T11:30:00+00:00",
+   "year": 2023,
+   "is_cancelled": true
+  },
+  {
+   "session_key": 9080,
+   "session_name": "Practice 2",
+   "meeting_key": 1209,
+   "date_start": "2023-05-19T15:00:00+00:00",
+   "year": 2023,
+   "is_cancelled": true
+  },
+  {
+   "session_key": 9081,
+   "session_name": "Practice 3",
+   "meeting_key": 1209,
+   "date_start": "2023-05-20T10:30:00+00:00",
+   "year": 2023,
+   "is_cancelled": true
+  },
+  {
+   "session_key": 9082,
+   "session_name": "Qualifying",
+   "meeting_key": 1209,
+   "date_start": "2023-05-20T14:00:00+00:00",
+   "year": 2023,
+   "is_cancelled": true
+  },
+  {
+   "session_key": 9086,
+   "session_name": "Race",
+   "meeting_key": 1209,
+   "date_start": "2023-05-21T13:00:00+00:00",
+   "year": 2023,
+   "is_cancelled": true
+  }
+ ],
+ "sessions?meeting_key=1210": [
+  {
+   "session_key": 9087,
+   "session_name": "Practice 1",
+   "meeting_key": 1210,
+   "date_start": "2023-05-26T11:30:00+00:00",
+   "year": 2023,
+   "is_cancelled": false
+  },
+  {
+   "session_key": 9088,
+   "session_name": "Practice 2",
+   "meeting_key": 1210,
+   "date_start": "2023-05-26T15:00:00+00:00",
+   "year": 2023,
+   "is_cancelled": false
+  },
+  {
+   "session_key": 9089,
+   "session_name": "Practice 3",
+   "meeting_key": 1210,
+   "date_start": "2023-05-27T10:30:00+00:00",
+   "year": 2023,
+   "is_cancelled": false
+  },
+  {
+   "session_key": 9090,
+   "session_name": "Qualifying",
+   "meeting_key": 1210,
+   "date_start": "2023-05-27T14:00:00+00:00",
+   "year": 2023,
+   "is_cancelled": false
+  },
+  {
+   "session_key": 9094,
+   "session_name": "Race",
+   "meeting_key": 1210,
+   "date_start": "2023-05-28T13:00:00+00:00",
+   "year": 2023,
+   "is_cancelled": false
+  }
+ ],
+ "sessions?meeting_key=1235": [
+  {
+   "session_key": 9508,
+   "session_name": "Practice 1",
+   "meeting_key": 1235,
+   "date_start": "2024-05-17T11:30:00+00:00",
+   "year": 2024,
+   "is_cancelled": false
+  },
+  {
+   "session_key": 9509,
+   "session_name": "Practice 2",
+   "meeting_key": 1235,
+   "date_start": "2024-05-17T15:00:00+00:00",
+   "year": 2024,
+   "is_cancelled": false
+  },
+  {
+   "session_key": 9510,
+   "session_name": "Practice 3",
+   "meeting_key": 1235,
+   "date_start": "2024-05-18T10:30:00+00:00",
+   "year": 2024,
+   "is_cancelled": false
+  },
+  {
+   "session_key": 9511,
+   "session_name": "Qualifying",
+   "meeting_key": 1235,
+   "date_start": "2024-05-18T14:00:00+00:00",
+   "year": 2024,
+   "is_cancelled": false
+  },
+  {
+   "session_key": 9515,
+   "session_name": "Race",
+   "meeting_key": 1235,
+   "date_start": "2024-05-19T13:00:00+00:00",
+   "year": 2024,
+   "is_cancelled": false
+  }
+ ],
+ "sessions?meeting_key=1260": [
+  {
+   "session_key": 9980,
+   "session_name": "Practice 1",
+   "meeting_key": 1260,
+   "date_start": "2025-05-16T11:30:00+00:00",
+   "year": 2025,
+   "is_cancelled": false
+  },
+  {
+   "session_key": 9981,
+   "session_name": "Practice 2",
+   "meeting_key": 1260,
+   "date_start": "2025-05-16T15:00:00+00:00",
+   "year": 2025,
+   "is_cancelled": false
+  },
+  {
+   "session_key": 9982,
+   "session_name": "Practice 3",
+   "meeting_key": 1260,
+   "date_start": "2025-05-17T10:30:00+00:00",
+   "year": 2025,
+   "is_cancelled": false
+  },
+  {
+   "session_key": 9983,
+   "session_name": "Qualifying",
+   "meeting_key": 1260,
+   "date_start": "2025-05-17T14:00:00+00:00",
+   "year": 2025,
+   "is_cancelled": false
+  },
+  {
+   "session_key": 9987,
+   "session_name": "Race",
+   "meeting_key": 1260,
+   "date_start": "2025-05-18T13:00:00+00:00",
+   "year": 2025,
+   "is_cancelled": false
+  }
+ ],
+ "drivers?session_key=9086": [],
+ "laps?session_key=9086": [],
+ "stints?session_key=9086": [],
+ "pit?session_key=9086": [],
+ "race_control?session_key=9086": [],
+ "session_result?session_key=9086": [],
+ "drivers?session_key=9987": [
+  {
+   "driver_number": 1,
+   "name_acronym": "VER",
+   "full_name": "Max Verstappen",
+   "team_name": "Red Bull Racing"
+  },
+  {
+   "driver_number": 16,
+   "name_acronym": "LEC",
+   "full_name": "Charles Leclerc",
+   "team_name": "Ferrari"
+  }
+ ],
+ "starting_grid?session_key=9983": [
+  {
+   "driver_number": 16,
+   "position": 1
+  },
+  {
+   "driver_number": 1,
+   "position": 7
+  }
+ ],
+ "session_result?session_key=9987": [
+  {
+   "driver_number": 16,
+   "position": 1,
+   "number_of_laps": 53,
+   "dnf": false,
+   "dns": false,
+   "dsq": false,
+   "gap_to_leader": 0
+  },
+  {
+   "driver_number": 1,
+   "position": 6,
+   "number_of_laps": 53,
+   "dnf": false,
+   "dns": false,
+   "dsq": false,
+   "gap_to_leader": 37.6
+  }
+ ],
+ "laps?session_key=9980": [
+  {
+   "driver_number": 1,
+   "lap_number": 1,
+   "lap_duration": null,
+   "is_pit_out_lap": true
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 2,
+   "lap_duration": 85.5,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 3,
+   "lap_duration": 83.2,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 4,
+   "lap_duration": null,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 5,
+   "lap_duration": 85.0,
+   "is_pit_out_lap": true
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 6,
+   "lap_duration": 82.5,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 16,
+   "lap_number": 1,
+   "lap_duration": null,
+   "is_pit_out_lap": true
+  },
+  {
+   "driver_number": 16,
+   "lap_number": 2,
+   "lap_duration": 86.1,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 16,
+   "lap_number": 99,
+   "lap_duration": 90.0,
+   "is_pit_out_lap": false
+  }
+ ],
+ "stints?session_key=9980": [
+  {
+   "driver_number": 1,
+   "stint_number": 1,
+   "compound": "SOFT",
+   "lap_start": 1,
+   "lap_end": 4,
+   "tyre_age_at_start": 0
+  },
+  {
+   "driver_number": 1,
+   "stint_number": 2,
+   "compound": "SOFT",
+   "lap_start": 5,
+   "lap_end": 6,
+   "tyre_age_at_start": 5
+  },
+  {
+   "driver_number": 16,
+   "stint_number": 1,
+   "compound": "MEDIUM",
+   "lap_start": 1,
+   "lap_end": 2,
+   "tyre_age_at_start": 0
+  }
+ ],
+ "pit?session_key=9980": [
+  {
+   "driver_number": 1,
+   "lap_number": 4,
+   "pit_duration": 62.3
+  }
+ ],
+ "laps?session_key=9981": [
+  {
+   "driver_number": 1,
+   "lap_number": 1,
+   "lap_duration": 83.9,
+   "is_pit_out_lap": true
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 2,
+   "lap_duration": 82.8,
+   "is_pit_out_lap": false
+  }
+ ],
+ "stints?session_key=9981": [
+  {
+   "driver_number": 1,
+   "stint_number": 1,
+   "compound": "HARD",
+   "lap_start": 1,
+   "lap_end": 2,
+   "tyre_age_at_start": 0
+  }
+ ],
+ "pit?session_key=9981": [],
+ "laps?session_key=9982": [
+  {
+   "driver_number": 16,
+   "lap_number": 1,
+   "lap_duration": 84.0,
+   "is_pit_out_lap": true
+  },
+  {
+   "driver_number": 16,
+   "lap_number": 2,
+   "lap_duration": 82.0,
+   "is_pit_out_lap": false
+  }
+ ],
+ "stints?session_key=9982": [
+  {
+   "driver_number": 16,
+   "stint_number": 1,
+   "compound": "MEDIUM",
+   "lap_start": 1,
+   "lap_end": 2,
+   "tyre_age_at_start": 0
+  }
+ ],
+ "pit?session_key=9982": [],
+ "laps?session_key=9983": [
+  {
+   "driver_number": 1,
+   "lap_number": 1,
+   "lap_duration": 85.0,
+   "is_pit_out_lap": true
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 2,
+   "lap_duration": 79.8,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 16,
+   "lap_number": 1,
+   "lap_duration": 85.3,
+   "is_pit_out_lap": true
+  },
+  {
+   "driver_number": 16,
+   "lap_number": 2,
+   "lap_duration": 79.5,
+   "is_pit_out_lap": false
+  }
+ ],
+ "stints?session_key=9983": [
+  {
+   "driver_number": 1,
+   "stint_number": 1,
+   "compound": "SOFT",
+   "lap_start": 1,
+   "lap_end": 2,
+   "tyre_age_at_start": 0
+  },
+  {
+   "driver_number": 16,
+   "stint_number": 1,
+   "compound": "SOFT",
+   "lap_start": 1,
+   "lap_end": 2,
+   "tyre_age_at_start": 0
+  }
+ ],
+ "pit?session_key=9983": [],
+ "laps?session_key=9987": [
+  {
+   "driver_number": 1,
+   "lap_number": 1,
+   "lap_duration": null,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 2,
+   "lap_duration": 85.0,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 3,
+   "lap_duration": 85.1,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 4,
+   "lap_duration": 85.2,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 5,
+   "lap_duration": 85.0,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 6,
+   "lap_duration": 85.1,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 15,
+   "lap_duration": 108.0,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 16,
+   "lap_duration": 95.0,
+   "is_pit_out_lap": true
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 17,
+   "lap_duration": 86.0,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 18,
+   "lap_duration": 86.1,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 19,
+   "lap_duration": 86.2,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 20,
+   "lap_duration": 86.3,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 16,
+   "lap_number": 1,
+   "lap_duration": null,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 16,
+   "lap_number": 2,
+   "lap_duration": 85.5,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 16,
+   "lap_number": 3,
+   "lap_duration": 85.4,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 16,
+   "lap_number": 4,
+   "lap_duration": 85.5,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 16,
+   "lap_number": 5,
+   "lap_duration": 85.4,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 16,
+   "lap_number": 6,
+   "lap_duration": 85.5,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 16,
+   "lap_number": 22,
+   "lap_duration": 107.0,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 16,
+   "lap_number": 23,
+   "lap_duration": 94.0,
+   "is_pit_out_lap": true
+  },
+  {
+   "driver_number": 16,
+   "lap_number": 41,
+   "lap_duration": 107.5,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 16,
+   "lap_number": 42,
+   "lap_duration": 94.5,
+   "is_pit_out_lap": true
+  }
+ ],
+ "stints?session_key=9987": [
+  {
+   "driver_number": 1,
+   "stint_number": 1,
+   "compound": "MEDIUM",
+   "lap_start": 1,
+   "lap_end": 15,
+   "tyre_age_at_start": 0
+  },
+  {
+   "driver_number": 1,
+   "stint_number": 2,
+   "compound": "HARD",
+   "lap_start": 16,
+   "lap_end": 53,
+   "tyre_age_at_start": 0
+  },
+  {
+   "driver_number": 16,
+   "stint_number": 1,
+   "compound": "HARD",
+   "lap_start": 1,
+   "lap_end": 22,
+   "tyre_age_at_start": 0
+  },
+  {
+   "driver_number": 16,
+   "stint_number": 2,
+   "compound": "HARD",
+   "lap_start": 23,
+   "lap_end": 41,
+   "tyre_age_at_start": 0
+  },
+  {
+   "driver_number": 16,
+   "stint_number": 3,
+   "compound": "MEDIUM",
+   "lap_start": 42,
+   "lap_end": 53,
+   "tyre_age_at_start": 0
+  }
+ ],
+ "pit?session_key=9987": [
+  {
+   "driver_number": 1,
+   "lap_number": 15,
+   "pit_duration": 23.5
+  },
+  {
+   "driver_number": 16,
+   "lap_number": 22,
+   "pit_duration": 24.1
+  },
+  {
+   "driver_number": 16,
+   "lap_number": 41,
+   "pit_duration": 23.9
+  }
+ ],
+ "race_control?session_key=9987": [
+  {
+   "category": "Flag",
+   "flag": "GREEN",
+   "message": "GREEN LIGHT - PIT EXIT OPEN",
+   "lap_number": 1
+  }
+ ],
+ "laps?session_key=9515": [
+  {
+   "driver_number": 1,
+   "lap_number": 1,
+   "lap_duration": null,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 2,
+   "lap_duration": 83.0,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 3,
+   "lap_duration": 83.1,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 4,
+   "lap_duration": 83.0,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 5,
+   "lap_duration": 83.1,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 6,
+   "lap_duration": 83.0,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 15,
+   "lap_duration": 106.0,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 16,
+   "lap_duration": 93.0,
+   "is_pit_out_lap": true
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 17,
+   "lap_duration": 84.0,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 18,
+   "lap_duration": 84.1,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 19,
+   "lap_duration": 84.2,
+   "is_pit_out_lap": false
+  },
+  {
+   "driver_number": 1,
+   "lap_number": 20,
+   "lap_duration": 84.3,
+   "is_pit_out_lap": false
+  }
+ ],
+ "stints?session_key=9515": [
+  {
+   "driver_number": 1,
+   "stint_number": 1,
+   "compound": "MEDIUM",
+   "lap_start": 1,
+   "lap_end": 15,
+   "tyre_age_at_start": 0
+  },
+  {
+   "driver_number": 1,
+   "stint_number": 2,
+   "compound": "HARD",
+   "lap_start": 16,
+   "lap_end": 51,
+   "tyre_age_at_start": 0
+  }
+ ],
+ "pit?session_key=9515": [
+  {
+   "driver_number": 1,
+   "lap_number": 15,
+   "pit_duration": 23.0
+  }
+ ],
+ "race_control?session_key=9515": [],
+ "session_result?session_key=9515": [
+  {
+   "driver_number": 1,
+   "position": 1,
+   "number_of_laps": 51,
+   "dnf": false,
+   "dns": false,
+   "dsq": false,
+   "gap_to_leader": 0
+  }
+ ]
+}
