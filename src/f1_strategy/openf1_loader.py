@@ -185,10 +185,15 @@ def load_weekend(
         quali_session_key=quali_meta["session_key"],
     )
 
-    pre_race_sessions = tuple(
-        _load_pre_race_session(client, s, tla_by_num=tla_by_num)
-        for s in _ordered_pre_race_sessions(sessions_meta)
-    )
+    # Ticket 30: rows dropped for empty fields, recorded alongside the
+    # history scan's warnings (ticket 28) on ``PreRaceInfo``.
+    load_warnings: list[str] = []
+    pre_race_sessions_list: list[Session] = []
+    for s in _ordered_pre_race_sessions(sessions_meta):
+        session, warnings = _load_pre_race_session(client, s, tla_by_num=tla_by_num)
+        pre_race_sessions_list.append(session)
+        load_warnings.extend(warnings)
+    pre_race_sessions = tuple(pre_race_sessions_list)
 
     race_session_key = int(race_meta["session_key"])
     race_rows = _load_race_rows(client, race_session_key)
@@ -197,8 +202,12 @@ def load_weekend(
         race_rows["race_control"], race_laps
     )
     neutralised_laps = _neutralised_lap_set(neutralisations)
+    race_stint_rows, warnings = _drop_stint_rows_with_empty_fields(
+        race_rows["stints"], session="Race"
+    )
+    load_warnings.extend(warnings)
     stints = _race_stints(
-        race_rows["stints"], tla_by_num=tla_by_num, drivers=set(teams)
+        race_stint_rows, tla_by_num=tla_by_num, drivers=set(teams)
     )
     finishing_status = _finishing_status(
         race_rows["session_result"], tla_by_num=tla_by_num, drivers=set(teams)
@@ -235,6 +244,7 @@ def load_weekend(
                 estimated_pit_loss,
                 historical_degradation,
             ) = measured
+    data_quality_warnings = tuple(load_warnings) + tuple(data_quality_warnings)
 
     return RaceWeekend(
         pre_race=PreRaceInfo(
@@ -461,18 +471,23 @@ def _teams(
 
 def _load_pre_race_session(
     client: _OpenF1Client, session_meta: dict, *, tla_by_num: dict[int, str]
-) -> Session:
+) -> tuple[Session, tuple[str, ...]]:
     """Build one ``Session`` from OpenF1's lap/stint/pit endpoints.
 
     ``tla_by_num`` is read from the race session's ``/v1/drivers`` row
     set and passed in so each pre-race session doesn't re-fetch the
     same (weekend-stable) number→TLA mapping.
+
+    Also returns the data-quality warnings for stint rows dropped for
+    empty fields (ticket 30, :func:`_drop_stint_rows_with_empty_fields`).
     """
     short = _SESSION_SHORT_NAME[session_meta["session_name"]]
     session_key = session_meta["session_key"]
 
     laps_rows = client.get("laps", session_key=session_key)
-    stints_rows = client.get("stints", session_key=session_key)
+    stints_rows, warnings = _drop_stint_rows_with_empty_fields(
+        client.get("stints", session_key=session_key), session=short
+    )
     pit_rows = client.get("pit", session_key=session_key)
 
     # Stints indexed by driver → sorted list, so a lap can be matched
@@ -499,7 +514,54 @@ def _load_pre_race_session(
             pit_laps_by_driver=pit_laps_by_driver,
         )
     )
-    return Session(name=short, laps=laps)
+    return Session(name=short, laps=laps), warnings
+
+
+def _drop_stint_rows_with_empty_fields(
+    stints_rows: list[dict], *, session: str
+) -> tuple[list[dict], tuple[str, ...]]:
+    """Drop ``/v1/stints`` rows OpenF1 left without a lap range or a
+    Compound, and say how many went (ticket 30).
+
+    - ``lap_start`` / ``lap_end`` null (always both together in the
+      2023-2025 cache: 102 rows in 20 sessions). The row covers no lap:
+      a placeholder for a driver number with no laps at all (2023
+      Hungary FP1), or a stint whose only lap has no ``lap_duration``
+      (lap-1 retirements, a 2023 Belgium Sprint stint replaced by the
+      next one). Dropping it loses no timed lap. Defaulting the range
+      would invent laps or a Stint.
+    - ``compound`` null (12 rows in 3 sessions, e.g. 2024 Imola FP1). The
+      row can't give a lap a Compound. A lap it covered falls to another
+      stint covering it, or is skipped like any lap outside every
+      stint; guessing a Compound would put the lap in the wrong
+      Degradation fit.
+
+    ``session`` is the short name the warnings start with (``"FP1"``,
+    ``"Race"``). No warning when nothing is dropped.
+    """
+    empty_range = 0
+    empty_compound = 0
+    kept: list[dict] = []
+    for row in stints_rows:
+        if row.get("lap_start") is None or row.get("lap_end") is None:
+            empty_range += 1
+        elif row.get("compound") is None:
+            empty_compound += 1
+        else:
+            kept.append(row)
+    total = len(stints_rows)
+    warnings: list[str] = []
+    if empty_range:
+        warnings.append(
+            f"{session} /v1/stints: dropped {empty_range} of {total} rows "
+            "with empty lap_start/lap_end"
+        )
+    if empty_compound:
+        warnings.append(
+            f"{session} /v1/stints: dropped {empty_compound} of {total} rows "
+            "with empty compound"
+        )
+    return kept, tuple(warnings)
 
 
 def _laps_from(
@@ -726,6 +788,13 @@ _VSC_START = "VIRTUAL SAFETY CAR DEPLOYED"
 _VSC_END = "VIRTUAL SAFETY CAR ENDING"
 _SC_START = "SAFETY CAR DEPLOYED"
 _SC_END = "SAFETY CAR IN THIS LAP"
+# A red flag stops the race; a standing restart after it ("RACE WILL
+# RESUME AT hh:mm - STANDING START PROCEDURE") starts racing again with
+# no SC on track, so an SC or VSC open at the red flag ended there
+# (ticket 30). A rolling restart is led by the SC and has no
+# "DEPLOYED" message of its own, so it leaves the period open.
+_RED_FLAG = "RED FLAG"
+_STANDING_START = "STANDING START"
 
 
 def _neutralisation_periods(
@@ -741,7 +810,12 @@ def _neutralisation_periods(
     closes on its own ``lap_number`` (the "in this lap" message fires
     on the lap the SC comes in, which is the last lap of the period).
 
-    If an "end" event is missing (a known gap in OpenF1's feed), the
+    A red flag followed by a standing restart ends an SC or VSC still
+    open at the red flag, on the red flag's ``lap_number`` (ticket 30:
+    2023 São Paulo's lap-1 SC, which used to run to lap 71 and leave the
+    race with no clean lap).
+
+    If an "end" event is still missing (a known gap in OpenF1's feed), the
     period is capped at the race lap count and a quality warning is
     returned. Returned warnings are also logged at WARNING level so the
     Backtest's output carries them without needing to pass the tuple
@@ -755,6 +829,7 @@ def _neutralisation_periods(
     warnings: list[str] = []
     open_vsc_lap: int | None = None
     open_sc_lap: int | None = None
+    red_flag_lap: int | None = None
 
     for row in race_control_rows:
         message = str(row.get("message", "")).upper()
@@ -776,6 +851,20 @@ def _neutralisation_periods(
             if open_sc_lap is not None:
                 periods.append(NeutralisationPeriod("SC", open_sc_lap, lap_num))
                 open_sc_lap = None
+        elif _RED_FLAG in message:
+            red_flag_lap = lap_num
+        elif _STANDING_START in message and red_flag_lap is not None:
+            if open_vsc_lap is not None:
+                periods.append(
+                    NeutralisationPeriod("VSC", open_vsc_lap, red_flag_lap)
+                )
+                open_vsc_lap = None
+            if open_sc_lap is not None:
+                periods.append(
+                    NeutralisationPeriod("SC", open_sc_lap, red_flag_lap)
+                )
+                open_sc_lap = None
+            red_flag_lap = None
 
     if open_vsc_lap is not None:
         warning = (

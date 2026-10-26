@@ -116,6 +116,10 @@ _Avoid_: skipped race, failed race
 A round on the calendar that was called off and never took place (2023 Emilia Romagna). It is not a race weekend, so it is not an Excluded Race: it is left out of season listings and never read as history for a later race at the circuit.
 _Avoid_: skipped race, missing race
 
+**Data Quality Warning**:
+A note on a scored race in a Backtest Result saying where its data was incomplete and what was done about it: a past season at the circuit that gave no usable samples, or source rows dropped because a field was empty. The race is still scored; a race whose data can't be used at all is an Excluded Race instead.
+_Avoid_: history warning (it covers more than history), data error
+
 **Held-out Season**:
 The season whose races are never used to tune settings, so its Backtest score shows how the model does on races it wasn't tuned on. Currently 2025; the seasons used for tuning are the **Tuning Seasons** (2022–2024).
 _Avoid_: test set, validation season

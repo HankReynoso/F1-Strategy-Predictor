@@ -541,7 +541,7 @@ def format_backtest(result: BacktestResult) -> str:
             )
     history_warning_races = [r for r in result.races if r.history_warnings]
     if history_warning_races:
-        lines += ["", "History quality warnings (ticket 28):"]
+        lines += ["", "Data quality warnings (tickets 28, 30):"]
         for race in history_warning_races:
             lines.append(f"  {race.season} {race.event} ({race.circuit}):")
             for warning in race.history_warnings:

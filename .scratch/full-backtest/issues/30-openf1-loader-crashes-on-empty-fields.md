@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Category:** bug
 
@@ -16,9 +16,129 @@
 
 Found in the first OpenF1-era baseline (`results/backtest/2026-10-26_baseline.md`). For each empty field, decide from the data what it means (a lap with no lap number, a stint with no end lap, a driver with no number, etc.) rather than defaulting it blindly: drop the row, derive the value, or record a data-quality warning (ticket 28's mechanism), and record the reasoning per field.
 
-- [ ] For each of the five races, the failing field, endpoint and row are found and recorded
-- [ ] Each empty field is handled by a recorded rule; no silent default that could distort lap times, Stints or Pit Loss
-- [ ] All five races load and are scored, or any still excluded has a specific, honest reason
-- [ ] Rows dropped or derived because of empty fields are counted in the race's data-quality warnings
-- [ ] The cause of São Paulo 2023's empty past-race samples is found and recorded; fixed if it's a loader gap
-- [ ] Fixture tests cover each empty-field case without the network
+- [x] For each of the five races, the failing field, endpoint and row are found and recorded
+- [x] Each empty field is handled by a recorded rule; no silent default that could distort lap times, Stints or Pit Loss
+- [x] All five races load and are scored, or any still excluded has a specific, honest reason
+- [x] Rows dropped or derived because of empty fields are counted in the race's data-quality warnings
+- [x] The cause of São Paulo 2023's empty past-race samples is found and recorded; fixed if it's a loader gap
+- [x] Fixture tests cover each empty-field case without the network
+
+## Implementation notes
+
+**What was built (2026-10-26), test-first.**
+
+- `src/f1_strategy/openf1_loader.py`
+  - New `_drop_stint_rows_with_empty_fields(rows, *, session) -> (kept, warnings)`: drops `/v1/stints` rows with empty `lap_start`/`lap_end`, then rows with empty `compound`, and returns one warning per kind, e.g. `"FP1 /v1/stints: dropped 45 of 114 rows with empty lap_start/lap_end"`. No warning when nothing is dropped.
+  - `_load_pre_race_session` runs every pre-race session's stints through it and now returns `(Session, warnings)`. `load_weekend` runs the race session's stints through it too (label `Race`) before `_race_stints`.
+  - `load_weekend` puts these target-weekend warnings first in `PreRaceInfo.data_quality_warnings`, followed by the history scan's ticket-28 warnings. `run_backtest` already copies that tuple onto `RaceResult.history_warnings`.
+  - `_neutralisation_periods`: a `RED FLAG` message followed by a `STANDING START` message closes any SC or VSC still open, on the red flag's `lap_number`. The red-flag lap is remembered until a standing-start message arrives; a rolling restart leaves the period open.
+- `src/f1_strategy/backtest.py`: the report section "History quality warnings (ticket 28)" is now "Data quality warnings (tickets 28, 30)", because it no longer lists only history.
+- `tests/fixtures/openf1/empty_fields_2023_2024.json`: real rows from `.cache/openf1`, trimmed to a few drivers and to the fields the loader reads. Covers the five crashing sessions, the 2023 Belgium and Qatar race stints, and the `race_control` sequences for 2023 São Paulo, Mexico City, Melbourne and Zandvoort.
+- `tests/test_openf1_empty_fields.py`: 17 fast tests (0.7 s).
+  - The five crashes, parametrised. Each session loads, and its `Session` is **equal** to the one built from the same rows with the empty rows removed. This pins the "no distortion" rule directly.
+  - The Imola FP1 lap under a null-compound stint takes its covering stint's Compound.
+  - Race stints with empty ranges are dropped and counted.
+  - The warnings reach `data_quality_warnings` end to end, ahead of the history warnings, and appear in the report.
+  - São Paulo, Mexico City and Melbourne 2023 periods. Zandvoort 2023's rolling restart is unchanged.
+- `tests/test_openf1_empty_fields_real_data.py`: 8 slow tests on the warm cache.
+  - The five races score through `run_backtest` + `data.load_weekend` with the exact warnings below.
+  - São Paulo 2023 gives past-race samples, and its race reads SC 1–2.
+  - 2025 São Paulo's Pit Loss uses (2022, 2023, 2024) with no warning.
+
+**Criterion 1: the crash, per race.** Reproduced first from the cache with a cache-only client that raises on any uncached URL. All five raised the baseline `TypeError` at the same line: `_load_pre_race_session`, `driver_stints.sort(key=lambda s: int(s["lap_start"]))`, on a `/v1/stints` row with `lap_start: null` and `lap_end: null`. The first such row per race, and what it is:
+
+| Race | Session (key) | Endpoint | First row | What the row is |
+|---|---|---|---|---|
+| 2023 Hungary | FP1 (9223) | `/v1/stints` | `driver_number 7, stint_number 1, lap_start null, lap_end null, compound UNKNOWN` | Placeholder: 45 of 114 rows are for 15 driver numbers (5, 6, 7, 8, 9, 12, 15, 17, 19, 21, 25, 26, 28, 29, 30) with no laps and no drivers entry, three rows each |
+| 2023 Belgium | Sprint (9140) | `/v1/stints` | `driver_number 23, stint_number 1, null, null, WET` | Ten drivers' stint 1 on Wets, with no range; each driver's stint 2 (Intermediates) covers their laps from lap 1 |
+| 2023 Qatar | Sprint (9220) | `/v1/stints` | `driver_number 40, stint_number 1, null, null, MEDIUM, tyre_age_at_start 6` | LAW's only stint; his only lap has no `lap_duration` |
+| 2024 Miami | Sprint (9506) | `/v1/stints` | `driver_number 4, stint_number 1, null, null, MEDIUM, tyre_age_at_start 3` | NOR's only stint (lap-1 retirement); his only lap has no `lap_duration` |
+| 2024 Emilia Romagna | FP1 (9508) | `/v1/stints` | `driver_number 11, stint_number 1, null, null, SOFT` | 16 rows, all stints duplicated by ranged stints of the same driver; plus 3 rows with `compound: null` and a valid range (e.g. `driver 2, stint 2, lap 2–2`) |
+
+Each race only got as far as its first null row; the sessions after it had never been fetched. Once that row was passed, the cache-only client stopped at the next *uncached* session, not at another null. The router run then fetched those sessions.
+
+**What an empty field means, from the data.** Every field the loader `int()`s was scanned across the whole cache: 71 weekends, 346 sessions, every endpoint. Four empty fields exist:
+
+- `stints.lap_start` and `lap_end`: 102 rows in 20 sessions, always null together.
+- `stints.compound`: 12 rows in 3 sessions.
+- `race_control.lap_number`: 1 row. Already skipped by ticket 22.
+- `session_result.number_of_laps`: 7 rows. Already ignored by the max in `_race_laps_count`.
+
+For each empty-range row in the five races and São Paulo 2023, I checked whether its driver had any lap not covered by another stint. Every such lap had `lap_duration: null`, and the loader already skips those. So an empty-range row never hides a timed lap.
+
+**Decisions and alternatives rejected.**
+
+- *Empty `lap_start`/`lap_end`: drop the row and count it.* The row covers no timed lap (above), so dropping it is exactly equivalent to OpenF1 never having sent it, and the fast test asserts that equality.
+  - Rejected: deriving the range from neighbouring stints or from the laps. There's nothing to derive: the driver either has no laps (Hungary placeholders) or the covered lap has no time.
+  - Rejected: a default such as `lap_start = 1`. It would invent a Stint, and in the race it would add a phantom Compound to a lap-1 retirement's Strategy.
+- *Empty `compound`: drop the row and count it.* Guessing a Compound (the previous stint's, say) would put laps in the wrong Degradation fit.
+  - At Imola 2024 FP1 each null-compound stint overlaps a ranged stint with a Compound, so the covered lap keeps a Compound (pinned by a test).
+  - Rejected: keeping the row and letting `_COMPOUND.get("NONE")` fail later. That was the old behaviour; it silently skipped the lap only if the null row happened to be the first match, and counted nothing.
+- *`compound: "UNKNOWN"` is not an empty field and is left alone.* It is a value OpenF1 sends (Hungary 2023 FP1 has 43 ranged UNKNOWN stints), and ticket 21's existing rule skips such laps. Hungary FP1 therefore keeps only the laps on Intermediate/Medium/Soft stints (RUS in the fixture).
+- *Count dropped rows per session and per kind, not per driver.* Hungary FP1 alone would add 45 lines otherwise. The count plus the session's total row count says how much went.
+- *Warnings go into ticket 28's `PreRaceInfo.data_quality_warnings`, not a new field.* The ticket asked for ticket 28's mechanism. Target-weekend warnings come first, history warnings after.
+- *Rename the report section; leave the field name.* The section is renamed (see Deviations). Renaming `RaceResult.history_warnings` would change the saved Backtest Result format (ADR-0005), so it is left as new ticket 34.
+- *History-side drops are not counted.* `_race_stints`, `_historical_stint_rates` and `_pit_rows_from_stints` already skipped empty-range rows in past races (ticket 22). Those rows cover no timed lap, so the samples are identical either way. Counting them would repeat the same line in every later race's warnings at that circuit.
+- *São Paulo 2023 cause, and the fix (criterion 5).* The past race loads, but `/v1/race_control` for session 9205 reads:
+  - SC deployed on lap 1
+  - red flag on lap 2
+  - "RACE WILL RESUME … STANDING START PROCEDURE" on lap 3
+  - no "SAFETY CAR IN THIS LAP" anywhere
+
+  `_neutralisation_periods` therefore capped the SC at lap 71. Every lap became neutralised, `_pit_losses_in` found no clean reference laps, and `_historical_stint_rates` found no clean stint laps. That gave empty samples and the baseline warning. This is a loader gap, so it is fixed.
+  - The rule: a red flag followed by a standing restart ends any open SC/VSC on the red-flag lap. A standing restart means racing resumed from the grid with no SC on track.
+  - Rejected: closing on every red flag. After a red flag with a *rolling* restart (Zandvoort 2023), the SC leads the restart with no new "DEPLOYED" message. Closing at the red flag would count those SC laps as green and pull slow laps into Pit Loss and Degradation samples. Over-neutralising only drops samples; under-neutralising distorts them. So a rolling restart keeps today's cap and its warning.
+  - Before/after diff of the periods for all 70 cached race and sprint sessions. Exactly three changed, all 2023:
+    - São Paulo: `SC 1–71` → `SC 1–2`.
+    - Mexico City: `SC 33–71` → `SC 33–34`.
+    - Melbourne: `SC 54–58` → `SC 54–55`, and the lap-7 SC (red flag on lap 8, standing restart) now appears as `SC 7–8`. It used to vanish because the lap-54 deployment overwrote the open lap-7 one.
+  - No Smoke Set race or Smoke Set history race is among them.
+
+**Criteria 3 and 4: the five races through the router** (`run_backtest` over `data.load_weekend`, 2026-10-26; the sessions the baseline never reached were fetched through the rate-limited client):
+
+| Race | Scored? | Neutralised | Pit Loss (seasons) | Scoreable | Top-1 | Top-3 | SW hits | Data Quality Warnings |
+|---|---|---|---|---|---|---|---|---|
+| 2023 Hungary | yes | no | 23.77 s (2022) | 17 | 0 | 0 | 0/34 | FP1: 45 of 114 empty-range |
+| 2023 Belgium (sprint) | yes | no | 18.83 s (2022) | 18 | 0 | 0 | 8/36 | S: 10 of 42 empty-range; Race: 1 of 57 empty-range |
+| 2023 Qatar (sprint) | yes | yes | 26.70 s (2021) | 17 | 0 | 0 | 0/52 | S: 1 of 23; Race: 1 of 73 empty-range; 2022 Lusail no samples |
+| 2024 Miami (sprint) | yes | yes | 21.09 s (2022, 2023) | 19 | 4.5 | 9.0 | 0/27 | S: 1 of 57 empty-range |
+| 2024 Emilia Romagna | yes | no | 52.09 s (2022) | 19 | 1.5 | 5.0 | 0/23 | FP1: 16 of 85 empty-range, 3 of 85 empty compound; 2023 Imola no samples |
+
+- 2025 São Paulo now measures Pit Loss from (2022, 2023, 2024): 25.15 s, 17 scoreable, Top-1 0.5, Top-3 1.0, SW 0/34. No history warning; the baseline's "2023 São Paulo: no usable past-race samples" is gone.
+- The "2022 Lusail" and "2023 Imola" warnings are pre-existing:
+  - Lusail: there was no 2022 Qatar race; Pit Loss falls back to 2021 pre-era.
+  - Imola: the 2023 race was cancelled; ticket 32 covers its wording.
+
+**Smoke Set unchanged.** Run twice on the same warm caches: once on `git archive HEAD` (pre-change code), once on the working tree. The per-race records are equal, and `format_backtest` text is byte-identical:
+
+| Race | Pit Loss (seasons) | Scoreable | Top-1 | Top-3 | SW hits |
+|---|---|---|---|---|---|
+| Singapore 2024 | 31.88 s (2022, 2023) | 18 | 4.0 | 8.0 | 2/20 |
+| Italian 2024 | 25.54 s (2022, 2023) | 19 | 2.33 | 6.67 | 10/30 |
+| Azerbaijan 2024 | 24.07 s (2022, 2023) | 16 | 1.5 | 3.75 | 1/17 |
+| United States 2024 | 21.44 s (2022, 2023) | 19 | 5.5 | 11.0 | 2/23 |
+| Saudi Arabian 2024 | 22.64 s (2022, 2023) | 18 | 4.0 | 9.0 | 9/19 |
+| Spanish 2022 | 22.94 s (2021) | 18 | 0.0 | 0.0 | 0/51 |
+
+These match ticket 28's table. There are no Excluded Races and no Data Quality Warnings, so no Smoke Set session has an empty stint field. `tests/test_smoke_set_real_data.py` passes. So do the other slow OpenF1 suites: race loader, weekend loader, season integrity, past-race fetch errors, client.
+
+**Deviations from the ticket / spec.**
+
+- *The neutralisation fix is outside "empty fields".* Criterion 5 asked for the São Paulo cause to be fixed if it was a loader gap, and it was one. The fix is limited to the red-flag-then-standing-restart pattern. It also corrects Mexico City and Melbourne 2023, which changes those races' (and their later history users') baseline numbers. The other capped-period patterns are left for new ticket 33.
+- *The report heading changed* from "History quality warnings (ticket 28)" to "Data quality warnings (tickets 28, 30)". No test pinned the old text. The saved JSON field name is unchanged (ticket 34).
+- No spec change: `.scratch/full-backtest/spec.md` doesn't describe loader null handling or the warnings section, and nothing in it is now wrong. `CONTEXT.md` gains **Data Quality Warning**. No ADR: both rules are cheap to reverse and explained where they live.
+
+**Open questions, known limitations and follow-ups.**
+
+- *2024 Emilia Romagna's 52.1 s Pit Loss looks wrong.* It comes from 2022 Imola alone, a wet race and itself an Excluded Race. Working back from ticket 29's 2025 number puts the 2024 Imola sample near 28 s. New ticket 35. The race is scored honestly on the data the model has, but its score rests on that number.
+- *Capped periods still wrong in other patterns.* A VSC turned into an SC (Silverstone 2023, Shanghai 2024, Lusail 2024) still runs to the flag, and Zandvoort 2023's rolling restart is still capped. New ticket 33.
+- *`RaceResult.history_warnings` now holds more than history.* New ticket 34, best done with ticket 26.
+- *The baseline file is stale for these races.* `results/backtest/2026-10-26_baseline.*` still lists the five as Excluded Races and has the old São Paulo, Mexico City and Melbourne 2023 neutralisations. It needs the rerun already planned after tickets 29–31.
+- *Melbourne 2023's lap-7 SC was lost because a second "DEPLOYED" overwrote an open one.* This fix covers it because the red flag closed the first SC. An SC re-deployed without any end or red flag in between would still be overwritten; it isn't seen in the cache.
+
+**Review feedback to the user.**
+
+- The five crashes were one bug, not five: the first `int()` on a stint range in the pre-race path. Ticket 22 had already guarded the same null in the race path, but not here.
+- The baseline's per-race "data unavailable" detail hid that every one was in a *practice or sprint* session, not the race.
+- The three 2023 sprint/race lap-1 retirements now drop silently from Stints exactly as before, but are counted. This is the first time those drops are visible in a Backtest Result.
+- The scores for 2023 Hungary, Belgium and Qatar are 0 Top-1 / 0 Top-3. That is the model's result on those races, not a loading problem, and is worth a look once the baseline is rerun.
