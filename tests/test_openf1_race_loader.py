@@ -493,11 +493,18 @@ def test_load_past_race_samples_returns_samples_for_an_openf1_season(monza_fixtu
 def test_load_past_race_samples_is_empty_when_no_openf1_meeting_matches(monza_fixture):
     """A 2022 past-season call never finds a meeting in OpenF1 (OpenF1
     coverage starts in 2023). This exercises the "empty" seam ticket
-    23 will see for the FastF1 branch."""
-    # The Monza fixture carries no `meetings?year=2022` row at all, so
-    # the client raises; the loader catches and returns empty.
+    23 will see for the FastF1 branch.
+
+    Ticket 28: the OpenF1 side now distinguishes "meeting not in OpenF1"
+    (a legitimate empty-samples result) from "fetch failed" (propagates
+    as :class:`OpenF1FetchError`). This test models the former by
+    returning an empty meetings list — the production call shape when
+    OpenF1's ``/v1/meetings?year=2022`` legitimately has no rows.
+    """
+    fixture = dict(monza_fixture)
+    fixture["meetings?year=2022"] = []
     samples = load_past_race_samples(
-        _FixtureClient(monza_fixture),
+        _FixtureClient(fixture),
         2022,
         "Monza",
         fuel_effect_s_per_lap=0.03,

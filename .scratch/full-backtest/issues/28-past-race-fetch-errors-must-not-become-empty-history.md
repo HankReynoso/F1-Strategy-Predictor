@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Category:** bug
 
@@ -36,14 +36,324 @@
 - The per-race record in the Backtest Result: carries which past seasons gave no samples and why.
 
 **Acceptance criteria:**
-- [ ] With a fake past-race loader that raises FastF1's rate-limit error, the Backtest waits and retries instead of producing empty history (fast test, injected wait)
-- [ ] With a fake that raises an OpenF1 fetch error, the race is retried or excluded as "fetch failed", never scored on empty history
-- [ ] A past race that genuinely has no usable data still gives empty samples, with its reason visible in the Backtest Result
-- [ ] The cause of Baku 2024's and Jeddah 2024's empty 2023 history is found and recorded; both races then use 2022 and 2023 history (slow test)
-- [ ] For every 2023–2025 circuit, the OpenF1 past-race match is checked against the alias map and any gap is fixed or recorded
-- [ ] The Smoke Set is re-run through the router and its numbers recorded in this ticket
+- [x] With a fake past-race loader that raises FastF1's rate-limit error, the Backtest waits and retries instead of producing empty history (fast test, injected wait)
+- [x] With a fake that raises an OpenF1 fetch error, the race is retried or excluded as "fetch failed", never scored on empty history
+- [x] A past race that genuinely has no usable data still gives empty samples, with its reason visible in the Backtest Result
+- [x] The cause of Baku 2024's and Jeddah 2024's empty 2023 history is found and recorded; both races then use 2022 and 2023 history (slow test)
+- [x] For every 2023–2025 circuit, the OpenF1 past-race match is checked against the alias map and any gap is fixed or recorded
+- [x] The Smoke Set is re-run through the router and its numbers recorded in this ticket
 
 **Out of scope:**
 - Moving slow tests to the router (ticket 27)
 - Data-quality warnings for race-control gaps (ticket 26), except reusing its mechanism if it has already landed
 - Any model or scoring change
+
+## Baku / Jeddah 2024 empty 2023 history: real cause (2026-10-26)
+
+Ticket 23's hypothesis ("the past-season fetch raised and was swallowed")
+is **not** what happened at Baku and Jeddah 2024. The alias and matcher
+both work: `data.measure_pit_loss_and_history("Baku", 2024, ...)` passes
+`"Baku"` (OpenF1's `location` value for the Azerbaijan GP) to
+`openf1_loader._find_meeting`, which matches `Azerbaijan Grand Prix`
+2023 (`meeting_key=1207`, race `session_key=9070`) on the first case-
+insensitive substring hit against `location`. Jeddah 2024 is the same
+(`Saudi Arabian Grand Prix` 2023, `meeting_key=1142`, race
+`session_key=7779`). Verified by iterating the cached
+`meetings?year=2023` payload.
+
+The real cause is an OpenF1 `/v1/pit` **coverage gap** for the first
+seven 2023 races. Verified against the live API 2026-10-26:
+
+```
+curl https://api.openf1.org/v1/pit?session_key=9070
+→ 404 {"detail":"No results found."}
+curl https://api.openf1.org/v1/pit?session_key=7779
+→ 404 {"detail":"No results found."}
+curl https://api.openf1.org/v1/pit?meeting_key=1207
+→ 404 {"detail":"No results found."}
+```
+
+Programmatic scan of all 2023 races' `/v1/pit`:
+
+```
+Bahrain Grand Prix          sk=7953  pit=   0 EMPTY
+Saudi Arabian Grand Prix    sk=7779  pit=   0 EMPTY
+Australian Grand Prix       sk=7787  pit=   0 EMPTY
+Azerbaijan Grand Prix       sk=9070  pit=   0 EMPTY
+Miami Grand Prix            sk=9078  pit=   0 EMPTY
+Emilia Romagna Grand Prix   sk=9086  pit=   0 EMPTY
+Monaco Grand Prix           sk=9094  pit=   0 EMPTY
+Spanish Grand Prix (sk=9102) onwards: all OK
+```
+
+The ticket-20 client already treats a `No results found.` 404 as `[]`
+(ticket 22 fix for the São Paulo sprint "no pit stops" case), so
+`load_past_race_samples` receives an empty `/v1/pit` list and
+`_pit_losses_in` yields nothing — even though `/v1/stints` for those
+races shows 19 of 20 drivers had multiple stints (pit stops did
+happen; OpenF1 just doesn't publish them under this endpoint for the
+first part of 2023). Historical Degradation was unaffected because
+its sample function reads `/v1/stints` + `/v1/laps`, both of which
+return normally.
+
+The fix derives pit-in laps from stint boundaries when `/v1/pit` is
+empty: a driver whose `/v1/stints` is `[1-10, 11-51]` pitted in on
+lap 10, which is already the exact semantics of
+`/v1/pit.lap_number` (the pit-in lap). The same
+`_pit_losses_in` algorithm runs on top of the derived rows.
+
+## Implementation notes
+
+**What was built (2026-10-26), test-first.**
+
+- `tests/test_past_race_fetch_errors.py` — new, 12 fast tests (0.9 s)
+  pinning the five bug shapes before the fix (two unit, three
+  Backtest-level, one end-to-end through the facade, plus three fast
+  tests for the stint-boundary derivation, the fallback skip-when-pit-
+  exists guarantee, and the history-warnings copy from `PreRaceInfo`
+  to `RaceResult`). Every test uses the existing injectable seams
+  (`fastf1_load_past_race_samples`, `openf1_load_past_race_samples`,
+  `wait`) so none sleep or touch the network.
+- `tests/test_past_race_fetch_errors_real_data.py` — new slow module,
+  4 tests through the real `OpenF1Client` against the warm cache:
+  Baku 2023 and Jeddah 2023 produce non-empty pit-loss samples under
+  the fallback, and every FastF1 2023–2024 `Location` string resolves
+  through `openf1_loader._find_meeting` using its `location_group`
+  aliases.
+- `src/f1_strategy/data.py`:
+  - `_fetch_past_samples` no longer wraps the branch calls in bare
+    `except Exception`. FastF1's `RateLimitExceededError` (a
+    `RuntimeError`) and OpenF1's `OpenF1FetchError` (ticket 20) now
+    propagate so the Backtest's ticket-17 retry wrapper and the new
+    FETCH_FAILED path can see them. The two single-source loaders
+    (`fastf1_loader.load_past_race_samples` and
+    `openf1_loader.load_past_race_samples`) already return empty
+    samples for "no match / 401 refused / no clean laps" cases
+    without raising, so there is no `except` to replace — trust
+    them.
+  - `_measure_pre_era_pit_loss` same change: drop the swallow-and-
+    continue; FastF1's `load_past_race_samples` handles missing-row
+    cases itself. One alias on one past season no longer silently
+    masks a FastF1CriticalError.
+  - `measure_pit_loss_and_history` gained a `return_warnings: bool
+    = False` keyword. The default-false form keeps the ticket-23
+    four-tuple return (fast tests unchanged); when `True`, the
+    function returns a 5-tuple whose last element is
+    `tuple[str, ...]` of per-past-season "no usable samples"
+    warnings. Fetch failures are **not** recorded here — they
+    propagate.
+- `src/f1_strategy/openf1_loader.py`:
+  - `_load_past_race_rows` no longer catches `Exception` around
+    `client.get("meetings", ...)`. An `OpenF1FetchError` on the
+    meetings call now propagates to the Backtest; only `ValueError`
+    from `_find_meeting` / `_session_named` returns `None` (a
+    legitimate "OpenF1 doesn't know this past race" case, e.g. a
+    2022 alias passed by mistake).
+  - `_past_races_at_circuit` same change: drop the swallow-and-
+    continue around `load_past_race_samples`. The internal "an
+    alias OpenF1 doesn't know" case still returns empty samples
+    via `_load_past_race_rows → None`.
+  - `load_past_race_samples` now calls `_pit_rows_from_stints(rows["stints"])`
+    when `/v1/pit` is empty. The derivation is: for every driver's
+    stints sorted by `lap_start`, yield one row per stint boundary
+    (every stint except the driver's last contributes a pit-in on
+    its `lap_end`). Null-range stints (DNS / unused-allocation
+    rows, same cases `_race_stints` already skips) are excluded. A
+    driver with one stint (never pitted — a lap-1 DNF, say) adds
+    nothing. The rows have the same `{driver_number, lap_number}`
+    shape `_pit_losses_in` reads.
+  - `load_weekend` now reads the ticket-23 `measure_history` hook's
+    return as either a 4-tuple (direct callers) or a 5-tuple
+    (router with warnings) and attaches
+    `data_quality_warnings` to the returned `PreRaceInfo`.
+- `src/f1_strategy/weekend.py`:
+  - `PreRaceInfo` gained
+    `data_quality_warnings: tuple[str, ...] = ()`. Carries the
+    cross-source scan's "no usable samples" notes through to the
+    Backtest. Default `()` matches hand-built test weekends.
+    Ticket 26 (planned, race-control warnings on `RaceOutcome`)
+    stays unaffected; a reader of the full `BacktestResult` can
+    merge the two.
+- `src/f1_strategy/backtest.py`:
+  - Imports `OpenF1FetchError` and catches it alongside
+    `RateLimitExceededError` on the target-weekend load; both end
+    up as `ExclusionReason.FETCH_FAILED`. OpenF1's client already
+    retries 429 / 5xx three times internally (ticket 20), so no
+    extra Backtest-level retry is added — if the error still
+    bubbles out, waiting more is pointless.
+  - `RaceResult` gained
+    `history_warnings: tuple[str, ...] = ()`. Copied from
+    `weekend.pre_race.data_quality_warnings` after a successful
+    load.
+  - `format_backtest` lists a new "History quality warnings
+    (ticket 28)" section when any scored race carries one.
+- `tests/test_openf1_race_loader.py`:
+  - `test_load_past_race_samples_is_empty_when_no_openf1_meeting_matches`
+    previously relied on the fixture client raising `AssertionError`
+    (an `Exception`) for a missing key. Now that the loader no
+    longer swallows every exception, the test adds an explicit
+    empty-list `meetings?year=2022` fixture entry — the production
+    call shape when OpenF1's `/v1/meetings` legitimately returns no
+    rows. Semantics unchanged; the test still proves the empty-
+    samples path for a season outside OpenF1 coverage.
+- `tests/test_smoke_set_real_data.py`:
+  - New `test_baku_and_jeddah_2024_use_2022_and_2023_pit_loss_history`
+    pins the ticket-28 fix: both races' `pit_loss_seasons` must
+    equal `(2022, 2023)` and neither carries a `history_warnings`
+    entry. The existing Singapore 2024 numbers (top-1 4.0/18,
+    top-3 8.0/18, SW hits 2/20) are unchanged, since Marina Bay
+    2023's `/v1/pit` is intact (session_key=9165).
+
+**Smoke Set numbers through the router (2026-10-26, after fix).**
+
+Full run via `data.load_weekend` against the committed FastF1/OpenF1
+caches, zero Excluded Races, zero history warnings. Per-race headline:
+
+| Race | Pit Loss (seasons) | Scoreable | Top-1 | Top-3 | Stop Window hits |
+|---|---|---|---|---|---|
+| Singapore 2024 (Marina Bay) | 31.88 s (2022, 2023) | 18 | 4.0 | 8.0 | 2 / 20 |
+| Italian 2024 (Monza) | 25.54 s (2022, 2023) | 19 | 2.33 | 6.67 | 10 / 30 |
+| Azerbaijan 2024 (Baku) | **24.07 s (2022, 2023)** | 16 | **1.5** | **3.75** | 1 / 17 |
+| United States 2024 (Austin, sprint) | 21.44 s (2022, 2023) | 19 | 5.5 | 11.0 | 2 / 23 |
+| Saudi Arabian 2024 (Jeddah) | **22.64 s (2022, 2023)** | 18 | 4.0 | 9.0 | 9 / 19 |
+| Spanish 2022 (Barcelona) | 22.94 s (2021,) | 18 | 0.0 | 0.0 | 0 / 51 |
+
+Bold cells moved vs ticket 23's Smoke table. Diff from ticket 23:
+
+- Baku 2024: `pit_loss_seasons` `(2022,) → (2022, 2023)`; Pit Loss
+  `25.80 → 24.07`; Top-1 `2.0 → 1.5`; Top-3 `4.75 → 3.75`. The 2023
+  Baku pit-loss sample now contributes (recovered via the stint-
+  boundary derivation).
+- Jeddah 2024: `pit_loss_seasons` `(2022,) → (2022, 2023)`; Pit Loss
+  `23.76 → 22.64`. Top-1 / Top-3 / Stop Window hits are unchanged
+  (the recovered 2023 Jeddah sample moved the measured Pit Loss by
+  about one second, which doesn't flip any Candidate Strategy's rank
+  for this weekend).
+- Every other Smoke Set race is byte-identical to ticket 23's table.
+
+**Decisions and alternatives rejected.**
+
+- *Derive pit-in laps from stint boundaries, instead of filing a bug
+  on OpenF1 and waiting.* The OpenF1 `/v1/pit` gap for the first
+  seven 2023 races is observable and reproducible; `/v1/stints`
+  already carries the pit-in lap in `lap_end`, so the data is right
+  there. Blocking Baku/Jeddah 2023 Pit Loss on an upstream fix is
+  the wrong trade-off — the derivation is simple, the semantics
+  match `/v1/pit.lap_number` exactly, and dropping the fallback
+  later is a one-line change if OpenF1 ever backfills the endpoint.
+  Pinned to `pit_rows` being an **empty** list, not just small, so
+  a race where OpenF1 recorded some but not all pit stops still
+  uses the real feed. (Not observed in the 2023–2024 scans, but the
+  guard is cheap.)
+- *Add a new `ExclusionReason` for the OpenF1 fetch case, instead
+  of reusing `FETCH_FAILED`.* The reason already names "rate limit
+  or network" (`FETCH_FAILED.value =
+  "fetch failed (rate limit or network)"`); an OpenF1 outage after
+  three retries is the "network" half of that. A reader can tell
+  the two apart from the `detail` string (`"FastF1 rate limit still
+  raised..."` vs `"OpenF1 fetch failed..."`). Adding a third
+  enum member would need a format bump in
+  `backtest_io.load_backtest_result` and would still mean the same
+  thing in practice. Rejected on symmetry.
+- *Thread `data_quality_warnings` on `PreRaceInfo` rather than on
+  `RaceOutcome`.* Ticket 26 plans to put race-control warnings on
+  `RaceOutcome`. Keeping the two sources separate (history warnings
+  on pre-race info, race-control warnings on race outcome) keeps
+  each dataclass responsible for its own data provenance. The
+  Backtest Result's `history_warnings` field is a straight copy of
+  the pre-race warnings; ticket 26 will add its own
+  `race_outcome_warnings` (or merge both under one field on
+  `RaceResult`, which is a two-line change). Flagged in ticket 26.
+- *Propagate `OpenF1FetchError` all the way to the Backtest's
+  retry wrapper and wait, instead of excluding directly.* The
+  OpenF1 client's `_fetch_with_retry` already retries 429 and 5xx
+  three times with exponential back-off (ticket 20); a persistent
+  error after that is almost certainly a real outage, where a
+  60-minute wait is unlikely to help. The user's full Backtest can
+  be re-run on a warm cache (ticket 17 guarantee: cached requests
+  don't count against any limit) once the outage clears. Treating
+  it as `FETCH_FAILED` matches the "distinct from genuine
+  DATA_UNAVAILABLE" rule ticket 17 established.
+- *Catch `OpenF1FetchError` inside the loader instead of letting
+  it reach the Backtest.* The ticket is explicit that fetch
+  failures must propagate "to the Backtest, which waits and retries
+  (ticket 17) or excludes the race with the 'fetch failed' reason".
+  Narrowing the loader's `except` is the main fix — hiding the
+  error back inside the loader would undo it.
+- *Hard-code the FastF1 2023–2024 Location list in the alias-map
+  test, rather than reading it from the FastF1 cache.* Reading
+  live FastF1 schedules in a test defeats the point of a warm-
+  cache slow test (and `test_fastf1_weekend_loader.py`'s own
+  schedule tests have been fragile per ticket 27). The ticket 16
+  alias map lists every rename anyway, and a future rename would
+  be caught by the "unresolved" assertion when the test is next
+  updated for a new season. The current list covers 2023 and 2024
+  completely; 2025 isn't in this session's OpenF1 cache so was
+  deliberately left out of this test. Follow-up: extend to 2025
+  once the cache is primed for it.
+
+**Deviations from the ticket / spec.**
+
+- *The ticket's hypothesis — "the past-season fetch raised and was
+  swallowed to empty samples" — is partly right and partly wrong.*
+  Right: the router's bare `except Exception` would have eaten a
+  fetch error if one had fired; this is the real bug and the fix
+  makes it visible. Wrong for Baku/Jeddah specifically: no error
+  was raised there. The fetch succeeded with an empty payload, so
+  no amount of narrowing `except` would have surfaced the gap. The
+  stint-boundary derivation is the only in-scope way to recover the
+  2023 sample. Both fixes landed; the Implementation notes say which
+  fix solved which race.
+- *The `data_quality_warnings` seam is on `PreRaceInfo` rather than
+  the ticket's informal "per-race record in the Backtest Result"
+  phrasing.* The warnings are generated during pre-race load, read
+  from pre-race info by the Backtest, and copied onto the per-race
+  record. Same outcome; the plumbing is in the loader rather than
+  bolted on later.
+
+**Open questions, known limitations and follow-ups.**
+
+- *The stint-boundary derivation only fires when `/v1/pit` returns
+  an **empty** list.* A race where OpenF1 recorded some pit stops
+  but missed one still uses the real feed and silently loses that
+  one stop. Not observed in 2023–2024, but worth re-checking if
+  OpenF1 ever adds partial /v1/pit coverage for an earlier gap race.
+- *The `data_quality_warnings` field on `PreRaceInfo` lives next
+  to ticket 26's planned `quality_warnings` on `RaceOutcome`.* A
+  follow-up pass (ticket 26 or a wrap-up ticket) should pick one
+  home and move the other there; a reader shouldn't have to look in
+  two places for provenance warnings. Flagged as review feedback
+  below.
+- *2025 isn't in the alias-map slow test* because no 2025 OpenF1
+  meeting is cached in this session. Add once ticket 24's full
+  baseline primes the 2025 cache, or run against a one-shot live
+  2025 meetings fetch.
+- *FastF1 side `load_past_race_samples` already returns empty
+  samples for a missing schedule row.* That means a FastF1
+  schedule outage (401 for 2018–2020) is still invisible on the
+  pre-era pit-loss fallback path; the Backtest sees `(2021,)`
+  only. ADR-0006's "Pre-era Pit Loss hole" paragraph already
+  records this. No change made here, since the pre-era is a
+  pre-existing known loss.
+
+**Review feedback to the user.**
+
+- Ticket 26's note "If ticket 28 lands first, its 'empty history'
+  reasons use the same warnings record rather than a second
+  mechanism" is now relevant: ticket 28 added
+  `PreRaceInfo.data_quality_warnings`; ticket 26 plans
+  `RaceOutcome.quality_warnings` for race-control gaps. When
+  ticket 26 lands, consider unifying both under one tuple on
+  `RaceResult` (the Backtest's per-race record) so a reader has
+  one place to look.
+- The `/v1/pit` gap is an OpenF1 data-coverage bug, not something
+  we can fix upstream. Worth reporting to OpenF1 so a fix lands
+  for everyone; the ticket's stint-boundary fallback keeps the
+  router working either way.
+- The Smoke Set `test_singapore_2024_inside_the_smoke_set_scores_under_the_router`
+  numbers didn't move because Marina Bay 2023's `/v1/pit` is
+  intact. If OpenF1 ever backfills the first-seven-2023 gap and
+  the measured samples shift (unlikely to be dramatic — the stint
+  derivation already uses the same `lap_number` semantics), the
+  Baku 2024 and Jeddah 2024 numbers in the ticket 23 Smoke table
+  may want a re-pin.

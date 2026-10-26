@@ -87,6 +87,14 @@ class PreRaceInfo:
     historical_degradation: dict["Compound", "HistoricalDegradation"] = field(
         default_factory=dict
     )
+    # Human-readable notes from the cross-source past-race scan (ticket 28):
+    # which past seasons/circuits returned no usable samples, and why. Empty
+    # for a race where every same-era past season contributed. Carries
+    # through load_weekend → Backtest's per-race record so a reader can tell
+    # a measured history apart from a partially-empty one. Does not include
+    # fetch failures, which propagate instead (rate limit, OpenF1 outage);
+    # only genuine "no rows / no clean laps" cases land here.
+    data_quality_warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

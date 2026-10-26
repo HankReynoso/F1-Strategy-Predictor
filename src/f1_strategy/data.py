@@ -32,7 +32,7 @@ from typing import Callable
 from . import fastf1_loader, openf1_loader
 from .backtest import RaceSpec
 from .location_aliases import location_group
-from .openf1_client import OpenF1Client
+from .openf1_client import OpenF1Client, OpenF1FetchError
 from .openf1_loader import OPENF1_FIRST_SEASON, PastRaceSamples
 from .pit_lane_table import estimated_pit_loss as _estimate_from_table
 from .pit_lane_table import pit_lane_entry
@@ -43,6 +43,12 @@ from .weekend import (
     HistoricalDegradation,
     RaceWeekend,
 )
+
+try:
+    from fastf1.exceptions import FastF1CriticalError
+except Exception:  # pragma: no cover - defensive if FastF1 isn't installed
+    class FastF1CriticalError(Exception):  # type: ignore[no-redef]
+        """Stand-in used only when FastF1 isn't importable; never in production."""
 
 
 FastF1PastSamplesLoader = Callable[..., PastRaceSamples]
@@ -82,6 +88,7 @@ def load_weekend(
             tuple[int, ...],
             bool,
             dict[Compound, HistoricalDegradation],
+            tuple[str, ...],
         ]:
             return measure_pit_loss_and_history(
                 circuit=circuit,
@@ -92,6 +99,7 @@ def load_weekend(
                 history_min_stint_length=history_min_stint_length,
                 fastf1_load_past_race_samples=fastf1_load_past_race_samples,
                 openf1_load_past_race_samples=openf1_load_past_race_samples,
+                return_warnings=True,
             )
 
         return openf1_loader.load_weekend(
@@ -147,7 +155,8 @@ def measure_pit_loss_and_history(
     history_min_stint_length: int = 4,
     fastf1_load_past_race_samples: FastF1PastSamplesLoader | None = None,
     openf1_load_past_race_samples: OpenF1PastSamplesLoader | None = None,
-) -> tuple[float, tuple[int, ...], bool, dict[Compound, HistoricalDegradation]]:
+    return_warnings: bool = False,
+):
     """Cross-source Pit Loss and Historical Degradation for one race.
 
     Walks the same-era past seasons ``[era_start(race_season), race_season)``
@@ -177,6 +186,13 @@ def measure_pit_loss_and_history(
 
     Historical Degradation stays measured-only — the pre-era and
     pit-lane-table paths are Pit Loss only (ADR-0004's main rule).
+
+    When ``return_warnings`` is ``True`` the return value is extended by a
+    ``tuple[str, ...]`` of data-quality notes (ticket 28): one entry per
+    past season/alias whose fetch returned no usable samples. Fetch
+    failures (FastF1 rate limit, :class:`OpenF1FetchError`) are **not**
+    recorded here — they propagate so the Backtest can retry or exclude
+    the race.
     """
     if fastf1_load_past_race_samples is None:
         fastf1_load_past_race_samples = fastf1_loader.load_past_race_samples
@@ -190,8 +206,11 @@ def measure_pit_loss_and_history(
     hist_samples: dict[Compound, list[tuple[float, int, float, int]]] = {
         c: [] for c in DRY_COMPOUNDS
     }
+    warnings: list[str] = []
 
     for season in range(era_min_season, race_season):
+        pit_contributed = False
+        hist_contributed = False
         for alias in circuit_aliases:
             samples = _fetch_past_samples(
                 season=season,
@@ -211,18 +230,35 @@ def measure_pit_loss_and_history(
                 pit_weighted.append(
                     (losses[len(losses) // 2], weight, season)
                 )
+                pit_contributed = True
             for compound, rate, lap_count in samples.stint_rates:
                 hist_samples[compound].append(
                     (rate, lap_count, weight, season)
                 )
+                hist_contributed = True
+        if not pit_contributed and not hist_contributed:
+            warnings.append(
+                f"{season} {'/'.join(circuit_aliases)}: no usable past-race "
+                f"samples (fetch succeeded with no rows or no clean laps)"
+            )
+        elif not pit_contributed:
+            warnings.append(
+                f"{season} {'/'.join(circuit_aliases)}: no Pit Loss sample "
+                f"(stint data available but /v1/pit returned no rows)"
+            )
 
     historical_degradation = _aggregate_history(hist_samples)
+
+    def _ret(pit_loss: float, pit_seasons: tuple[int, ...], estimated: bool):
+        if return_warnings:
+            return pit_loss, pit_seasons, estimated, historical_degradation, tuple(warnings)
+        return pit_loss, pit_seasons, estimated, historical_degradation
 
     if pit_weighted:
         total_weight = sum(w for _, w, _ in pit_weighted)
         pit_loss = sum(m * w for m, w, _ in pit_weighted) / total_weight
         pit_loss_seasons = tuple(sorted({s for _, _, s in pit_weighted}))
-        return pit_loss, pit_loss_seasons, False, historical_degradation
+        return _ret(pit_loss, pit_loss_seasons, False)
 
     # Fallback 1: pre-era FastF1 (ADR-0004 Pit Loss exception). Only fires
     # when the same-era pass found no measurable sample — mostly 2022
@@ -238,17 +274,12 @@ def measure_pit_loss_and_history(
     )
     if pre_era_pit is not None:
         pit_loss, pit_loss_seasons = pre_era_pit
-        return pit_loss, pit_loss_seasons, False, historical_degradation
+        return _ret(pit_loss, pit_loss_seasons, False)
 
     # Fallback 2: pit-lane-table estimate (ticket 07, ticket 25).
     entry = pit_lane_entry(circuit)
     if entry is not None:
-        return (
-            _estimate_from_table(entry),
-            (),
-            True,
-            historical_degradation,
-        )
+        return _ret(_estimate_from_table(entry), (), True)
 
     raise ValueError(
         f"no previous seasons' races at {circuit!r} were available to measure "
@@ -270,32 +301,43 @@ def _fetch_past_samples(
     fastf1_load_past_race_samples: FastF1PastSamplesLoader,
     openf1_load_past_race_samples: OpenF1PastSamplesLoader,
 ) -> PastRaceSamples:
-    """Dispatch one past season to its source. Errors from a single
-    season are swallowed to empty samples — one bad past race must not
-    sink the whole scan. ``FastF1CriticalError`` (rate limit) still
-    propagates because :func:`fastf1_loader.load_past_race_samples`
-    re-raises it; the Backtest's retry loop handles it."""
+    """Dispatch one past season to its source. Fetch failures propagate so
+    the Backtest can wait and retry (FastF1 rate limit, ticket 17) or
+    exclude the race as ``FETCH_FAILED`` (OpenF1 outage).
+
+    Ticket 28: this used to wrap every call in ``except Exception`` to
+    keep "one bad past race must not sink the whole scan", but
+    :class:`fastf1.exceptions.RateLimitExceededError` is a ``RuntimeError``
+    and :class:`OpenF1FetchError` is also an ``Exception`` — both got
+    silently turned into "this past season has no history", undoing
+    ticket 17's wait-and-retry for every past race loaded through the
+    router. The two loaders already distinguish fetch failures from
+    genuine missing data (both re-raise :class:`FastF1CriticalError` and
+    neither catches :class:`OpenF1FetchError`), so trust them: let the
+    error through, and only catch genuine "no match / no clean laps"
+    cases that the loader turns into an empty :class:`PastRaceSamples`.
+    """
     if season >= OPENF1_FIRST_SEASON:
-        try:
-            return openf1_load_past_race_samples(
-                openf1_client,
-                season,
-                event,
-                fuel_effect_s_per_lap=fuel_effect_s_per_lap,
-                history_min_stint_length=history_min_stint_length,
-            )
-        except Exception:
-            return PastRaceSamples(pit_losses=(), stint_rates=())
-    try:
-        return fastf1_load_past_race_samples(
+        # OpenF1 branch: load_past_race_samples returns empty samples when
+        # the meeting isn't found or the race session is missing (a 2022
+        # alias passed by mistake would land here); OpenF1FetchError and
+        # unexpected RuntimeErrors propagate.
+        return openf1_load_past_race_samples(
+            openf1_client,
             season,
             event,
-            cache_dir=fastf1_cache_dir,
             fuel_effect_s_per_lap=fuel_effect_s_per_lap,
             history_min_stint_length=history_min_stint_length,
         )
-    except Exception:
-        return PastRaceSamples(pit_losses=(), stint_rates=())
+    # FastF1 branch: load_past_race_samples re-raises FastF1CriticalError
+    # (rate limit) and returns empty samples for every other load failure.
+    return fastf1_load_past_race_samples(
+        season,
+        event,
+        cache_dir=fastf1_cache_dir,
+        fuel_effect_s_per_lap=fuel_effect_s_per_lap,
+        history_min_stint_length=history_min_stint_length,
+    )
 
 
 def _aggregate_history(
@@ -342,16 +384,17 @@ def _measure_pre_era_pit_loss(
     pit_weighted: list[tuple[float, float, int]] = []
     for season in range(PIT_LOSS_PRE_ERA_MIN_SEASON, era_min_season):
         for alias in circuit_aliases:
-            try:
-                samples = fastf1_load_past_race_samples(
-                    season,
-                    alias,
-                    cache_dir=fastf1_cache_dir,
-                    fuel_effect_s_per_lap=fuel_effect_s_per_lap,
-                    history_min_stint_length=history_min_stint_length,
-                )
-            except Exception:
-                continue
+            # FastF1CriticalError propagates (rate limit → Backtest retry).
+            # fastf1_loader.load_past_race_samples already returns empty
+            # samples for a missing schedule row or a 401-refused load, so
+            # there is nothing else to catch here (ticket 28).
+            samples = fastf1_load_past_race_samples(
+                season,
+                alias,
+                cache_dir=fastf1_cache_dir,
+                fuel_effect_s_per_lap=fuel_effect_s_per_lap,
+                history_min_stint_length=history_min_stint_length,
+            )
             losses = sorted(samples.pit_losses)
             if not losses:
                 continue

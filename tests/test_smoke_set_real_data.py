@@ -99,3 +99,27 @@ def test_the_2022_smoke_set_race_uses_pre_era_pit_loss() -> None:
     assert two_thousand_twenty_two.pit_loss_seasons != ()
     assert all(2018 <= s <= 2021 for s in two_thousand_twenty_two.pit_loss_seasons)
     assert two_thousand_twenty_two.neutralised_race is False
+
+
+def test_baku_and_jeddah_2024_use_2022_and_2023_pit_loss_history() -> None:
+    """Ticket 28: Baku 2024 and Jeddah 2024 lost their 2023 Pit Loss
+    sample in ticket 23's Smoke Set because OpenF1's ``/v1/pit`` has a
+    coverage gap for the first seven 2023 races. The fix derives pit-in
+    laps from stint boundaries when ``/v1/pit`` is empty, which lets
+    both races contribute a 2023 pit-loss sample.
+
+    FastF1-era (ticket 23 Smoke table) was ``(2022,)`` for both races;
+    the router-era numbers below should both be ``(2022, 2023)``.
+    """
+    result = run_backtest(SMOKE_SET, load=_loader)
+    baku = next(r for r in result.races if "Azerbaijan" in r.event)
+    jeddah = next(r for r in result.races if "Saudi" in r.event)
+    assert baku.pit_loss_seasons == (2022, 2023)
+    assert jeddah.pit_loss_seasons == (2022, 2023)
+    # Both races' measured Pit Loss stays in a sensible band.
+    assert 15.0 < baku.pit_loss < 40.0
+    assert 15.0 < jeddah.pit_loss < 40.0
+    # No history warning for either race under this fix (every same-era
+    # past season at the circuit contributed to Pit Loss and/or HD).
+    assert baku.history_warnings == ()
+    assert jeddah.history_warnings == ()

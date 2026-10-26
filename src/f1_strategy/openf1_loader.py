@@ -190,6 +190,7 @@ def load_weekend(
     )
 
     circuit = str(meeting["location"])
+    data_quality_warnings: tuple[str, ...] = ()
     if measure_history is None:
         pit_loss, pit_loss_seasons, historical_degradation = _past_races_at_circuit(
             circuit=circuit,
@@ -200,12 +201,25 @@ def load_weekend(
         )
         estimated_pit_loss = False
     else:
-        (
-            pit_loss,
-            pit_loss_seasons,
-            estimated_pit_loss,
-            historical_degradation,
-        ) = measure_history(circuit, season)
+        # ticket 28: the cross-source router can return a 5-tuple with
+        # per-past-season "no samples" warnings; direct callers (fast
+        # tests) that return the 4-tuple keep working unchanged.
+        measured = measure_history(circuit, season)
+        if len(measured) == 5:
+            (
+                pit_loss,
+                pit_loss_seasons,
+                estimated_pit_loss,
+                historical_degradation,
+                data_quality_warnings,
+            ) = measured
+        else:
+            (
+                pit_loss,
+                pit_loss_seasons,
+                estimated_pit_loss,
+                historical_degradation,
+            ) = measured
 
     return RaceWeekend(
         pre_race=PreRaceInfo(
@@ -219,6 +233,7 @@ def load_weekend(
             pit_loss_seasons=pit_loss_seasons,
             estimated_pit_loss=estimated_pit_loss,
             historical_degradation=historical_degradation,
+            data_quality_warnings=data_quality_warnings,
         ),
         race=RaceOutcome(
             stints=stints,
@@ -1012,8 +1027,24 @@ def load_past_race_samples(
         rows["race_control"], race_laps_count
     )
     neutralised = _neutralised_lap_set(periods)
+    # Ticket 28: OpenF1's /v1/pit has a coverage gap for the first seven
+    # 2023 races (Bahrain → Monaco, including Baku and Jeddah: verified
+    # 2026-10-26 that /v1/pit?session_key=<2023 race> returns
+    # 404 {"detail":"No results found."} for session_keys 7953, 7779,
+    # 7787, 9070, 9078, 9086, 9094, even though /v1/stints shows those
+    # races had pit stops). The ticket-23 Smoke Set's Baku 2024 and
+    # Jeddah 2024 lost their 2023 pit-loss sample because of this. The
+    # pit-in lap is derivable from stint boundaries: a driver with
+    # stints [1-10, 11-51] pitted in on lap 10. Deriving pit-in laps
+    # from stint boundaries matches the semantics /v1/pit.lap_number
+    # already carries (the lap the driver entered the pits), so the
+    # same :func:`_pit_losses_in` algorithm applies on top of the
+    # derived rows.
+    pit_rows = rows["pit"]
+    if not pit_rows:
+        pit_rows = _pit_rows_from_stints(rows["stints"])
     losses = tuple(
-        _pit_losses_in(rows["laps"], rows["pit"], neutralised)
+        _pit_losses_in(rows["laps"], pit_rows, neutralised)
     )
     rates = tuple(
         _historical_stint_rates(
@@ -1034,16 +1065,16 @@ def _load_past_race_rows(
     """Fetch the row sets needed to measure Pit Loss and Historical
     Degradation from one past OpenF1 race. ``None`` when no OpenF1
     meeting matches (e.g. a 2022 race, outside OpenF1's coverage, which
-    ticket 23 will route to FastF1 instead).
+    ticket 23 routes to FastF1 instead).
 
+    A fetch error (:class:`.openf1_client.OpenF1FetchError`) propagates
+    so the Backtest can exclude the race as ``FETCH_FAILED`` (ticket 28);
+    only "meeting / race session not in OpenF1" cases return ``None``.
     The past-race scan reads the same four race-session endpoints as
     the target weekend, plus ``/v1/session_result`` for the race lap
     count that caps a missing SC/VSC "end" event.
     """
-    try:
-        meetings = client.get("meetings", year=season)
-    except Exception:
-        return None
+    meetings = client.get("meetings", year=season)
     try:
         meeting = _find_meeting(meetings, event)
     except ValueError:
@@ -1066,6 +1097,39 @@ def _load_past_race_rows(
             "session_result", session_key=race_session_key
         ),
     }
+
+
+def _pit_rows_from_stints(stints_rows: list[dict]) -> list[dict]:
+    """Derive pit-in rows from stint boundaries (ticket 28).
+
+    Returns one row per driver pit stop, in the shape ``_pit_losses_in``
+    reads: ``{"driver_number": int, "lap_number": int}`` where
+    ``lap_number`` is the pit-in lap (the ``lap_end`` of every stint
+    except each driver's last). Used only when OpenF1's ``/v1/pit``
+    returned no rows for a race whose ``/v1/stints`` clearly shows pit
+    stops happened (the first seven 2023 races).
+
+    Null-range stints (DNS / unused-allocation rows, same cases
+    ``_race_stints`` and ``_historical_stint_rates`` already skip) are
+    excluded here too. A driver with only one stint (no pit stop)
+    contributes nothing, which is the right behaviour.
+    """
+    by_driver: dict[int, list[dict]] = {}
+    for row in stints_rows:
+        drv = row.get("driver_number")
+        if drv is None:
+            continue
+        if row.get("lap_start") is None or row.get("lap_end") is None:
+            continue
+        by_driver.setdefault(int(drv), []).append(row)
+    derived: list[dict] = []
+    for drv, driver_stints in by_driver.items():
+        driver_stints.sort(key=lambda s: int(s["lap_start"]))
+        for stint in driver_stints[:-1]:
+            derived.append(
+                {"driver_number": drv, "lap_number": int(stint["lap_end"])}
+            )
+    return derived
 
 
 def _past_races_at_circuit(
@@ -1100,16 +1164,16 @@ def _past_races_at_circuit(
     }
     for season in range(min_season, race_season):
         for alias in sorted(circuit_aliases):
-            try:
-                samples = load_past_race_samples(
-                    client,
-                    season,
-                    alias,
-                    fuel_effect_s_per_lap=fuel_effect_s_per_lap,
-                    history_min_stint_length=history_min_stint_length,
-                )
-            except Exception:
-                continue
+            # OpenF1FetchError propagates so the Backtest can exclude as
+            # FETCH_FAILED (ticket 28). An alias OpenF1 doesn't know about
+            # returns empty samples (meeting lookup inside returns None).
+            samples = load_past_race_samples(
+                client,
+                season,
+                alias,
+                fuel_effect_s_per_lap=fuel_effect_s_per_lap,
+                history_min_stint_length=history_min_stint_length,
+            )
             if not samples.pit_losses and not samples.stint_rates:
                 continue
             weight = 0.5 ** (race_season - season - 1)

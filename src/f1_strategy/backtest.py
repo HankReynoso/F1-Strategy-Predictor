@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from .degradation import DegradationSource
+from .openf1_client import OpenF1FetchError
 from .predictor import NotDryRaceError, predict
 from .rate_limit import WAIT_SECONDS_DEFAULT, RateLimitWait, default_wait
 from .scorer import RaceSummary, compare
@@ -128,6 +129,13 @@ class RaceResult:
     degradation_sources: Mapping[DegradationSource, int] = field(
         default_factory=dict
     )
+    # Human-readable notes from the cross-source past-race scan (ticket 28):
+    # which past seasons returned no usable samples. Empty when every
+    # same-era past season at the circuit contributed. Fetch failures
+    # (rate limit, OpenF1FetchError) land in ``excluded`` with
+    # ``FETCH_FAILED`` instead; only "fetch succeeded, no rows / no
+    # clean laps" cases are recorded here.
+    history_warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -243,6 +251,21 @@ def run_backtest(
                 )
             )
             continue
+        except OpenF1FetchError as error:
+            # The OpenF1 client already retries 429 / 5xx internally
+            # (ticket 20). If the error still bubbles out, waiting more
+            # won't help — record it as FETCH_FAILED so a reader can
+            # tell a network problem apart from genuine missing data,
+            # and move on. Ticket 28.
+            excluded.append(
+                ExcludedRace(
+                    season=spec.season,
+                    event=spec.event,
+                    reason=ExclusionReason.FETCH_FAILED,
+                    detail=f"OpenF1 fetch failed: {error}",
+                )
+            )
+            continue
         except Exception as error:
             excluded.append(
                 ExcludedRace(
@@ -296,6 +319,7 @@ def run_backtest(
                 degradation_sources=_count_degradation_sources(
                     predictions, weekend
                 ),
+                history_warnings=tuple(weekend.pre_race.data_quality_warnings),
             )
         )
     return BacktestResult(
@@ -515,6 +539,13 @@ def format_backtest(result: BacktestResult) -> str:
                 f"  {race.season} {race.event} ({race.circuit}): "
                 f"{race.pit_loss:.1f} s"
             )
+    history_warning_races = [r for r in result.races if r.history_warnings]
+    if history_warning_races:
+        lines += ["", "History quality warnings (ticket 28):"]
+        for race in history_warning_races:
+            lines.append(f"  {race.season} {race.event} ({race.circuit}):")
+            for warning in race.history_warnings:
+                lines.append(f"    {warning}")
     if result.excluded:
         lines += ["", "Excluded Races:"]
         for excluded in result.excluded:

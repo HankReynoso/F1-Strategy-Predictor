@@ -14,6 +14,14 @@ OpenF1 is licensed [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-
 
 Borrowing Pit Loss from a later season at the same circuit (e.g. using 2023 Australia for 2022 Australia) was considered and rejected: a 2022 prediction would then read data from a race that happened after it, which leaks future information into a past prediction and would silently corrupt the Backtest's score for that race.
 
+## OpenF1 `/v1/pit` coverage gap for the first seven 2023 races
+
+Verified 2026-10-26: OpenF1's `/v1/pit?session_key=<race>` returns HTTP 404 with body `{"detail":"No results found."}` for the Bahrain, Saudi Arabian, Australian, Azerbaijan, Miami, Emilia Romagna and Monaco Grands Prix 2023 (session_keys 7953, 7779, 7787, 9070, 9078, 9086, 9094), even though `/v1/stints` for those races shows that 19 of 20 drivers had multiple stints (pit stops happened). The gap is OpenF1-side and reproduces whether the filter is `session_key` or `meeting_key`. Historical Degradation is unaffected because its sample function reads `/v1/stints` + `/v1/laps`, both of which return normally; only measured Pit Loss is affected.
+
+For the two Smoke Set races the router loads out of this range (Baku 2024 and Jeddah 2024 both reach into Baku 2023 and Jeddah 2023), the fix in [ticket 28](../../.scratch/full-backtest/issues/28-past-race-fetch-errors-must-not-become-empty-history.md) derives pit-in laps from stint boundaries when `/v1/pit` is empty: a driver whose `/v1/stints` is `[1–10, 11–51]` pitted in on lap 10, which is exactly what `/v1/pit.lap_number` would carry. The derivation only fires when `/v1/pit` returns an empty list — a race with any real `/v1/pit` rows uses them as-is, so a partial-coverage race isn't silently overwritten. If OpenF1 ever backfills the gap, the fallback becomes dead code and can be removed in one line.
+
+Reconstructing pit laps from stints when `/v1/pit` is non-empty was rejected: trusting the published feed over an inferred derivation is the right default. Blocking Baku and Jeddah 2024's 2023 history on an upstream OpenF1 fix was also rejected: the data is sitting right there in `/v1/stints`.
+
 ## Mixed-source history for one weekend
 
 A race's history for Historical Degradation and for Pit Loss spans several past seasons, which can straddle the 2022/2023 boundary. The router loads each past season from its own source — 2022 from FastF1, 2023 and later from OpenF1 — and the resulting lists of Stints and pit-loss samples are merged by the same code that merges single-source history today. The weekend description shape (`PreRaceInfo`, `RaceOutcome`, `Lap`, `Stint`, `NeutralisationPeriod`) is identical across sources; the only visible difference is `tyre_set` ids, which already differ across sessions today ([ADR-0002](0002-remaining-sets-count-new-only.md)) and are only used for same-stint uniqueness. The season router that implements this split lives in ticket 23.
