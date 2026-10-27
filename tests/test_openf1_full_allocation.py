@@ -302,3 +302,20 @@ def test_fastf1_weekend_still_falls_back_on_used_sets(fastf1_2022, tmp_path) -> 
     ver = predict(_load_2022(tmp_path))["VER"]
     assert ver.remaining_sets_rule is RemainingSetsRule.USED_SET_FALLBACK
     assert ver.remaining_sets == {Compound.SOFT: 8, Compound.MEDIUM: 1, Compound.HARD: 0}
+
+
+def test_fastf1_saved_used_set_does_not_widen_the_new_only_count(
+    fastf1_2022, tmp_path
+) -> None:
+    # Ticket 51 kept the new-only count for 2022: both Hards used new and one
+    # used Hard seen, but Softs and Mediums still leave a runnable Strategy,
+    # so the used Hard isn't counted and no Candidate Strategy needs a Hard.
+    fastf1_2022["FP1"] = (
+        *(_fastf1_lap(n, Compound.HARD, n, new=True) for n in range(1, 3)),
+        _fastf1_lap(3, Compound.HARD, 3, new=False),
+    )
+    ver = predict(_load_2022(tmp_path))["VER"]
+    assert ver.remaining_sets_rule is RemainingSetsRule.NEW_ONLY
+    assert ver.remaining_sets == {Compound.SOFT: 8, Compound.MEDIUM: 3, Compound.HARD: 0}
+    assert ver.candidates
+    assert all(Compound.HARD not in c.strategy.compounds for c in ver.candidates)

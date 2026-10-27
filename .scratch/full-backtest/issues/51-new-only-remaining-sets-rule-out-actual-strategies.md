@@ -6,7 +6,7 @@ _Contradicts ADR-0002's claim that the understatement is small; worth reopening 
 
 **Blocked by:** 50 (OpenF1 new-set count)
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Category:** enhancement
 
@@ -49,7 +49,73 @@ Decision rule: measure three options for FastF1-sourced 2022 weekends on the 202
 Adopt the option with the best 2022 top-3 Strategy Match; on a tie (within 0.5 percentage points), adopt (c), because one rule for both data sources is simpler. Build the adopted option, record the measurements and the decision in an ADR-0002 amendment, and label predictions with the matching `RemainingSetsRule`.
 
 Acceptance criteria (replace the ones above):
-- [ ] All three options are measured on 2022 (top-1, top-3, Stop Window hits, and the share of drivers whose actual Strategy is ruled out), with 2025 reported but not used
-- [ ] The adopted option follows the decision rule and is built, with fixture tests through `predict()`
-- [ ] ADR-0002 is amended with the measurements and the decision
-- [ ] A full warm-cache Backtest is compared with the 2026-10-27 baseline and the comparison recorded
+- [x] All three options are measured on 2022 (top-1, top-3, Stop Window hits, and the share of drivers whose actual Strategy is ruled out), with 2025 reported but not used
+- [x] The adopted option follows the decision rule and is built, with fixture tests through `predict()`
+- [x] ADR-0002 is amended with the measurements and the decision
+- [x] A full warm-cache Backtest is compared with the 2026-10-27 baseline and the comparison recorded
+
+## Implementation notes
+
+**Status: done (2026-10-27).** The triage criteria (the second list) are met. The first list was replaced at triage, so it's left unticked; see the deviations for how each item is covered.
+
+**What was built.**
+
+- Measured three Remaining Sets rules for FastF1-sourced (2022) weekends with offline Backtests. The decision rule picked (a): keep the new-only count with its fallbacks. That is the existing code, so `src/` doesn't change, and predictions keep `RemainingSetsRule.NEW_ONLY` (or the fallback labels).
+- One new fixture test through `predict()`: `test_fastf1_saved_used_set_does_not_widen_the_new_only_count` in `tests/test_openf1_full_allocation.py`. A 2022 FastF1 weekend where VER used both Hards new and also ran a used Hard. The new-only count still leaves Soft and Medium Strategies, so the used Hard isn't counted (H = 0), the rule stays `NEW_ONLY`, and no Candidate Strategy needs a Hard. This is the case where (b) and (c) would have differed from (a). Ticket 50's existing FastF1 tests already pin the rest of (a): `test_fastf1_weekend_keeps_the_new_only_count` and `test_fastf1_weekend_still_falls_back_on_used_sets`.
+- ADR-0002 has a new amendment, "2022 keeps the new-only count", with the measurements and the decision.
+
+**Measurements (judged on 2022, a Tuning Season, only).** Offline 2022 Backtests, `--offline`, run outside the repo. The harness was a scratch script that patched the predictor in-process for each option and recorded each scoreable driver's prediction against their actual Strategy. 292 scored drivers, 580 actual stops, 4 Excluded Races under every option.
+
+| Option | Top-1 | Top-3 | Stop Window hits | Hits on predicted Strategies | Actual Strategy ruled out by Remaining Sets | Including > 3-stop actuals | Actual Strategy is a Plausible Candidate |
+|---|---|---|---|---|---|---|---|
+| (a) new-only + fallbacks | 31.0 (10.62%) | **72.583 (24.86%)** | 58 (10.0%) | 58/183 | 62 (21.2%) | 71 (24.3%) | 128 |
+| (b) new + used, every driver | 28.333 (9.70%) | 66.0 (22.60%) | 72 (12.4%) | 72/193 | 13 (4.5%) | 16 (5.5%) | 128 |
+| (c) full Tyre Allocation | 29.5 (10.10%) | 69.0 (23.63%) | 76 (13.1%) | 76/200 | 1 (0.3%) | 1 (0.3%) | 132 |
+
+- "Ruled out" means the driver's actual Strategy is a legal 1–3 stop Strategy that `can_run` rejects with the Remaining Sets on their prediction. Unfiltered-fallback drivers are never ruled out. The "including" column also counts the 15 drivers whose actual Strategy had more than 3 stops (for example São Paulo's `S → S → S → M → S`), which every rule rules out. It reproduces the ticket's 71 of 292 exactly.
+- (a) reproduces baseline-v3's 2022 scores exactly (31 / 72.58 / 58), which checks the harness.
+- Under (a), 285 drivers were `NEW_ONLY` and 7 `USED_SET_FALLBACK`, matching ticket 50's count.
+- **Held-out Season (2025), reported, not used:** every option applies to FastF1-sourced weekends only, and 2025 loads through OpenF1, so all three score 2025 the same as baseline-v3: top-1 47.67, top-3 109.08 of 370, Stop Window hits 74 of 626. The options weren't run on 2025 one by one, since they can't differ there.
+
+**Decision, per the triage rule.** The rule: best 2022 top-3, with (c) on a tie within 0.5 pp. (a) 24.86% beats (c) 23.63% by 1.23 pp, and (b) 22.60% by 2.26 pp. No tie, so (a) is adopted. Nothing else entered the decision.
+
+**What the numbers say.** The understatement ADR-0002 called small is real: 21% of 2022 scored drivers had a legal actual Strategy ruled out. But loosening the pool doesn't improve top-3.
+- The looser rules make more actual Strategies runnable, and Stop Window hits rise because more actual stops land on a Candidate Strategy.
+- The number of drivers whose actual Strategy is a Plausible Candidate barely moves (128 → 128 / 132). The Strategies let in include faster ones, which push the actual Strategy past the 20 s Plausible margin or out of the top 3.
+- So the binding constraint is the simulation's ranking (ticket 52), not Remaining Sets. If ticket 52 changes the ranking, re-run this comparison: (c) may then win, and both sources could share one rule. The ADR amendment says the same.
+
+**Full Backtest, compared with the 2026-10-27 baseline (criterion 4).**
+
+```
+uv run f1-strategy backtest 2022 2023 2024 2025 --offline --label ticket-51 --results-dir <session scratchpad>
+uv run f1-strategy compare results/backtest/2026-10-27_baseline-v3.json <scratchpad>/2026-10-27_ticket-51.json
+```
+
+- Exit 0 in 1 min 57 s. Code: `5d4fc08` plus this ticket's uncommitted test, ADR and ticket edits (no `src/` change). Format version 3, `metadata.offline: true`.
+- 80 races scored and 12 excluded. The saved `races` and `excluded` records equal baseline-v3's exactly, and every line of the compare shows +0.0. All races: top-1 157.33/1,378, top-3 374.67/1,378, Stop Window hits 293/2,557. Tuning Seasons: 109.67 / 265.58 of 1,008, hits 219/1,931. Held-out Season: 47.67 / 109.08 of 370, hits 74/626.
+- Compared against `baseline-v3`, not the format-version-2 `2026-10-27_baseline.json` the criterion names. baseline-v3 is the same day's baseline re-saved after tickets 50 and 58 at format version 3, so it can compare every figure. Against the older file, the difference is exactly ticket 50's recorded change.
+- The result was saved outside the repo, as asked. Since it's identical, there's no new baseline to commit.
+
+**Decisions and alternatives rejected.**
+
+- *No code change, only a test.* (a) is the code already there. Rejected: relabelling NEW_ONLY predictions, or adding a rule flag. The decision keeps the status quo, and a new label would mean nothing.
+- *The new test passed straight away, so there was no red phase.* Test-first can't apply to behaviour that already exists. The test pins the exact case the decision turns on, so a later change to (b) or (c) breaks it on purpose.
+- *(b) was measured by making the fallback's count the rule for every driver,* with the unfiltered fallback still behind it, as the triage wording says. Its predictions carried the `NEW_ONLY` label in the harness, because only the count was patched. A real build of (b) would have needed its own label and would have left OpenF1 weekends on the full allocation.
+- *(c) was measured by marking every 2022 weekend `set_usage_known=False`,* which is exactly the OpenF1 path from ticket 50.
+
+**Deviations from the ticket and spec.**
+
+- The first list of criteria was replaced at triage. Its items are covered by the triage criteria, with one gap: the per-source ruled-out share was measured for FastF1 (2022) only. On OpenF1 weekends (2023+), every driver gets the full allocation after ticket 50. So Remaining Sets can only rule out an actual Strategy that needs more sets than the allocation (three Hards on a regulation weekend), and that wasn't counted.
+- Compared against baseline-v3 rather than the format-version-2 baseline (see above).
+- No spec change: the decision keeps what the spec says. No `CONTEXT.md` change: **Tyre Allocation / Remaining Sets** already describes the per-source rule, and no term was added or sharpened.
+
+**Open questions, limitations and follow-ups.**
+
+- Revisit after ticket 52 (too few stops / ranking). Today's ranking rewards the tighter pool, but that may not last.
+- New ticket 61 (needs-triage): the fast suite has 1 failure at HEAD (`5d4fc08`), unrelated to this ticket. Ticket 58's `test_committed_results_load_with_the_figures_not_recorded` expects every committed Backtest Result to be pre-format-version-3, and the committed baseline-v3 is version 3. Checked by stashing this ticket's change: same failure.
+- Ticket 59 is still `needs-triage`, although `2026-10-27_baseline-v3.json` is committed. Worth closing at the next triage.
+
+**Review feedback to the user.**
+
+- The decision rule produced the counter-intuitive result: the rule that rules out a fifth of actual Strategies scores best on top-3. Treat that as evidence about the ranking rather than as an endorsement of new-only. (c) wins on Stop Window hits (+18 of 580) and on ruled-out share, and would unify the two sources.
+- With the decision rule fixed in advance at 0.5 pp, a 1.23 pp gap on 292 drivers is about 3.6 drivers' worth of top-3 credit. The rule was applied as written, but the margin is small enough that ticket 52's work could reverse it.

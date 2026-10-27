@@ -29,6 +29,20 @@ With Remaining Sets no longer pruning 2023+ predictions, the allocation itself m
 
 The full allocation overstates what a driver has in the race, since regulation set returns and practice wear aren't counted. This is the permissive side of the trade-off the original decision made conservatively: it can allow a Strategy a driver couldn't run, but never rules out one they could. The decision rests on the data, not the score: OpenF1 doesn't say which sets were new, and this is the only option that doesn't guess. Whether 2022 should follow, so the two sources share one rule, is [ticket 51](../../.scratch/full-backtest/issues/51-new-only-remaining-sets-rule-out-actual-strategies.md).
 
+## Amendment (2026-10-27): 2022 keeps the new-only count
+
+The original decision says the new-only count's understatement "is small in practice". The Backtest disagrees. On 2022 (FastF1, where new-set detection is sound) the new-only count rules out the Strategy the driver actually ran for 62 of 292 scored drivers (21%). That rises to 71 (24%) when you also count actual Strategies with more than 3 stops, which no rule allows. [Ticket 51](../../.scratch/full-backtest/issues/51-new-only-remaining-sets-rule-out-actual-strategies.md) measured three rules for FastF1-sourced weekends. Offline 2022 Backtests, 292 scored drivers, 580 actual stops:
+
+| Rule | Top-1 | Top-3 | Stop Window hits | Actual Strategy ruled out |
+|---|---|---|---|---|
+| (a) new-only count with the fallbacks (unchanged) | 31.0 (10.6%) | **72.58 (24.9%)** | 58 (10.0%) | 62 (21.2%) |
+| (b) new + used sets for every driver (the fallback's count as the rule) | 28.33 (9.7%) | 66.0 (22.6%) | 72 (12.4%) | 13 (4.5%) |
+| (c) full Tyre Allocation, as on OpenF1 weekends | 29.5 (10.1%) | 69.0 (23.6%) | 76 (13.1%) | 1 (0.3%) |
+
+The decision rule was set at triage: adopt the rule with the best 2022 top-3 Strategy Match, and on a tie within 0.5 percentage points adopt (c), so both sources share one rule. (a) leads (c) by 1.23 points, so it isn't a tie, and **2022 keeps the new-only count with its fallbacks**. The per-source rule from the previous amendment stands. This was judged on 2022, a Tuning Season, only. The Held-out Season (2025) loads through OpenF1, so all three rules give it the same score (top-1 47.67, top-3 109.08, hits 74 of 370 drivers), and it wasn't used.
+
+The understatement is real, but removing it doesn't help the ranking. The looser rules let more of the drivers' actual Strategies through, and they gain Stop Window hits because more actual stops land on a Candidate Strategy. But the Strategies they let in also include faster ones that crowd the actual Strategy out of the top 3, or push it past the Plausible margin. The number of drivers whose actual Strategy is a Plausible Candidate barely moves (128 under (a) and (b), 132 under (c)). So the gap between "runnable" and "ranked" sits in the simulation's ranking (ticket 52), not in Remaining Sets. Revisit this if ticket 52 changes the ranking: the order between (a) and (c) may then flip.
+
 ## Considered Options
 
 - **Track every physical set across sessions** (match used stints to earlier new ones by starting Tyre Life): rejected because FastF1 does not expose a persistent Tyre Set id and the Tyre Life matching heuristic is ambiguous for about half of used stints (ticket 07). The precision gained is small and the data pipeline becomes brittle to FastF1 cleanup.
