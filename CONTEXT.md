@@ -78,6 +78,10 @@ _Avoid_: predicted time, race sim
 One Strategy that a driver could plausibly be on, considered as an option when predicting.
 _Avoid_: option, scenario
 
+**Mirrored Strategy**:
+A Candidate Strategy with the same Compounds as another, in a different order (M → H and H → M; H → H → M and M → H → H). Simulated Race Time doesn't depend on Compound order, so Mirrored Strategies always tie and share top-1 credit, until Circuit Tendency separates them.
+_Avoid_: reversed strategy, mirror pair
+
 **Strategy Prediction**:
 A ranked set of Candidate Strategies for one driver, each with a probability.
 _Avoid_: forecast, guess

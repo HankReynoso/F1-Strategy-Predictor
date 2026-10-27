@@ -144,7 +144,7 @@ The loader changes this needs: history (Historical Degradation, and the inputs f
 - Wet and mixed-condition races (later version; they remain Excluded Races).
 - 2026 races (they join once enough same-era history exists).
 - Live Predictions, Replay and real live timing.
-- Fixing model gaps the Backtest reveals, such as Las Vegas track evolution or early Stop Windows (ticket 15). These become new tickets.
+- Fixing model gaps the Backtest reveals, such as Las Vegas track evolution, too few predicted stops, zero Degradation or Stop Windows pinned to the race start or end (tickets 52–54, which replace pre-race ticket 15). These become new tickets.
 - A dashboard.
 - Storing the FastF1 cache anywhere persistent for cloud sessions.
 
@@ -152,6 +152,6 @@ The loader changes this needs: history (Historical Degradation, and the inputs f
 
 - Domain vocabulary follows `CONTEXT.md`: Backtest, Backtest Result, Excluded Race, Held-out Season, Tuning Seasons, Smoke Set, Regulation Era, Neutralised Race, Strategy Match, Stop Window, Pit Loss, Historical Degradation.
 - ADR-0004 sets the history rule and its Pit Loss exception; ADR-0003 sets the Degradation fallback chain the Backtest will exercise at scale.
-- Known results from the single-race work that the first full run should reproduce for those races: Singapore 2024 top-1 6.5/18, top-3 13.75/18, Stop Window hits 3/20 (ticket 08). Differences there point to a Backtest or loader bug, not a model change.
-- Ticket 15 (early Stop Windows) is parked waiting for this spec's first full Backtest Result. Re-triage it once one exists.
+- Known results for Singapore 2024: the single-race work on FastF1 data scored top-1 6.5/18, top-3 13.75/18, Stop Window hits 3/20 (ticket 08). Since 2023+ weekends load through OpenF1 (ADR-0006), the reference is the 2026-10-27 baseline's top-1 4.0/18, top-3 8.0/18, Stop Window hits 2/20, with Pit Loss 32.42 s. The whole gap to ticket 08 is a loader bug, ticket 50: OpenF1 counts re-fitted Tyre Sets as new (analysed in ticket 24). Any other difference still points to a Backtest or loader bug, not a model change.
+- Pre-race ticket 15 (early Stop Windows) was re-triaged against the 2026-10-27 baseline (ticket 24). Its premise doesn't hold across the era, and it is superseded by tickets 52–54.
 - Ticket 09 moves to the Circuit Tendency spec's folder when that spec is written.
