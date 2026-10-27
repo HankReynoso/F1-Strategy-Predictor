@@ -1151,7 +1151,8 @@ def load_past_race_samples(
     # from stint boundaries matches the semantics /v1/pit.lap_number
     # already carries (the lap the driver entered the pits), so the
     # same :func:`_pit_losses_in` algorithm applies on top of the
-    # derived rows.
+    # derived rows. Ticket 37: the Historical Degradation fit reads the
+    # same rows, so each Stint's in-lap is dropped from it too.
     pit_rows = rows["pit"]
     if not pit_rows:
         pit_rows = _pit_rows_from_stints(rows["stints"])
@@ -1162,7 +1163,7 @@ def load_past_race_samples(
         _historical_stint_rates(
             rows["laps"],
             rows["stints"],
-            rows["pit"],
+            pit_rows,
             neutralised,
             fuel_effect_s_per_lap,
             history_min_stint_length,

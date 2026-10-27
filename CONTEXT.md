@@ -60,6 +60,10 @@ _Avoid_: history rate, past-season deg
 A single flat-out lap in practice, recognisable as a fast lap between slower preparation and cool-down laps. Several Push Laps may be done on one Tyre Set. Push Laps are not part of a Long Run.
 _Avoid_: quali sim, hot lap, flying lap
 
+**In-lap**:
+The lap on which a driver enters the pits, the last lap of a Stint. It is slow, so it is left out of Degradation fits and measured separately as part of Pit Loss. The first lap of the next Stint, leaving the pits, is the **Out-lap** and is treated the same way.
+_Avoid_: pit lap, box lap
+
 **Pit Loss**:
 The race time a driver loses by making one pit stop at a given circuit, compared with staying out.
 _Avoid_: pit delta (fine in speech), stop time
