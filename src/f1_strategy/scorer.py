@@ -18,7 +18,7 @@ are unscoreable and left out of the race summary.
 
 from dataclasses import dataclass
 
-from .predictor import CandidateStrategy, Strategy, StrategyPrediction
+from .predictor import CandidateStrategy, PlannedStop, Strategy, StrategyPrediction
 from .weekend import Compound, RaceWeekend, Stint
 
 
@@ -42,6 +42,10 @@ class DriverScore:
     top_3_credit: float
     stop_window_hits: tuple[bool, ...]
     unscoreable: bool
+    # The Stop Windows each actual stop was scored against: the matching
+    # Candidate Strategy's planned stops, or empty when the actual Strategy
+    # isn't a Candidate Strategy (ticket 58).
+    stop_windows: tuple[PlannedStop, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -119,12 +123,14 @@ def _score_driver(
         top_1_credit = 0.0
         top_3_credit = 0.0
         hits: tuple[bool, ...] = tuple(False for _ in actual.stop_laps)
+        windows: tuple[PlannedStop, ...] = ()
     else:
         top_1_credit, top_3_credit = _tied_group_credit(candidates, matched)
         hits = tuple(
             window.first_lap <= stop_lap <= window.last_lap
             for stop_lap, window in zip(actual.stop_laps, matched.stops)
         )
+        windows = matched.stops
     return DriverScore(
         driver=driver,
         actual=actual,
@@ -132,6 +138,7 @@ def _score_driver(
         top_3_credit=top_3_credit,
         stop_window_hits=hits,
         unscoreable=False,
+        stop_windows=windows,
     )
 
 

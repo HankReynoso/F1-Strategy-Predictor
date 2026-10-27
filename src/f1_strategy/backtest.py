@@ -17,6 +17,12 @@ and add up to the totals. Each race also records how many (team,
 Compound) Degradation estimates came from each source, which the
 Backtest Result sums into a run-wide count. Every score shows numerator
 and denominator.
+
+Next to the Stop Window hits over every actual stop, each total also
+reports the hits over Predicted-Strategy Stops (actual stops on a Strategy
+that was one of the driver's Candidate Strategies, the only stops that can
+be hits) and the average Stop Window width over those stops (ticket 58),
+so Stop Windows can be judged apart from Strategy Match.
 """
 
 from __future__ import annotations
@@ -137,6 +143,14 @@ class RaceResult:
     # ``FETCH_FAILED`` instead; only "fetch succeeded, no rows / no
     # clean laps" cases are recorded here.
     history_warnings: tuple[str, ...] = ()
+    # Predicted-Strategy Stops (ticket 58): actual stops by scoreable
+    # drivers whose actual Strategy is one of their Candidate Strategies.
+    # Every Stop Window hit is one of them. `stop_window_laps` sums the
+    # width in laps (both ends counted) of the Stop Windows those stops
+    # were scored against. None means not recorded: a Backtest Result
+    # saved before format version 3.
+    predicted_strategy_stops: int | None = None
+    stop_window_laps: int | None = None
 
 
 @dataclass(frozen=True)
@@ -146,6 +160,11 @@ class ScoreTotals:
     `numerator`/`denominator` are the inputs the headline percentage reads;
     for Strategy Match the denominator is scoreable drivers, for Stop
     Window hits it is the number of actual stops those drivers made.
+    Stop Window hits over Predicted-Strategy Stops share the numerator
+    `stop_window_hits` with `predicted_strategy_stops` as denominator, and
+    the average Stop Window width is `stop_window_laps /
+    predicted_strategy_stops`. Both are None when any race in the subset
+    didn't record them.
     """
 
     scoreable_drivers: int
@@ -154,6 +173,8 @@ class ScoreTotals:
     stop_window_hits: int
     actual_stops: int
     races: int
+    predicted_strategy_stops: int | None
+    stop_window_laps: int | None
 
 
 @dataclass(frozen=True)
@@ -166,6 +187,13 @@ class RaceAveraged:
     is `top_1_rate_sum / races_with_scoreable`. Races with no scoreable
     drivers don't contribute to the Strategy-Match averages; races with
     no actual stops don't contribute to the Stop-Window average.
+
+    Over races with at least one Predicted-Strategy Stop,
+    `predicted_strategy_hit_rate_sum` sums each race's hits per
+    Predicted-Strategy Stop and `stop_window_width_sum` each race's average
+    Stop Window width in laps; both divide by
+    `races_with_predicted_strategy_stops`. All three are None when any race
+    didn't record its Predicted-Strategy Stops.
     """
 
     top_1_rate_sum: float
@@ -173,6 +201,9 @@ class RaceAveraged:
     stop_window_rate_sum: float
     races_with_scoreable: int
     races_with_stops: int
+    predicted_strategy_hit_rate_sum: float | None
+    stop_window_width_sum: float | None
+    races_with_predicted_strategy_stops: int | None
 
 
 @dataclass(frozen=True)
@@ -314,11 +345,9 @@ def run_backtest(
             )
             continue
         comparison = compare(predictions, weekend)
-        actual_stops = sum(
-            len(s.stop_window_hits)
-            for s in comparison.scores.values()
-            if not s.unscoreable
-        )
+        scoreable = [s for s in comparison.scores.values() if not s.unscoreable]
+        actual_stops = sum(len(s.stop_window_hits) for s in scoreable)
+        windows = [w for s in scoreable for w in s.stop_windows]
         scored.append(
             RaceResult(
                 season=spec.season,
@@ -335,6 +364,8 @@ def run_backtest(
                     predictions, weekend
                 ),
                 history_warnings=tuple(weekend.pre_race.data_quality_warnings),
+                predicted_strategy_stops=len(windows),
+                stop_window_laps=sum(w.last_lap - w.first_lap + 1 for w in windows),
             )
         )
     return BacktestResult(
@@ -425,8 +456,13 @@ def _sum_degradation_sources(
     return totals
 
 
+def _records_predicted_strategy_stops(races: Sequence[RaceResult]) -> bool:
+    return all(r.predicted_strategy_stops is not None for r in races)
+
+
 def _totals(races) -> ScoreTotals:
     races = list(races)
+    recorded = _records_predicted_strategy_stops(races)
     return ScoreTotals(
         scoreable_drivers=sum(r.summary.scoreable_drivers for r in races),
         top_1_credit=sum(r.summary.top_1_credit for r in races),
@@ -434,15 +470,25 @@ def _totals(races) -> ScoreTotals:
         stop_window_hits=sum(r.summary.stop_window_hits for r in races),
         actual_stops=sum(r.actual_stops for r in races),
         races=len(races),
+        predicted_strategy_stops=(
+            sum(r.predicted_strategy_stops for r in races) if recorded else None
+        ),
+        stop_window_laps=(
+            sum(r.stop_window_laps for r in races) if recorded else None
+        ),
     )
 
 
 def _race_averaged(races) -> RaceAveraged:
+    races = list(races)
     top_1 = 0.0
     top_3 = 0.0
     stop_window = 0.0
+    predicted_hit_rate = 0.0
+    width = 0.0
     with_scoreable = 0
     with_stops = 0
+    with_predicted_stops = 0
     for race in races:
         scoreable = race.summary.scoreable_drivers
         if scoreable:
@@ -452,12 +498,23 @@ def _race_averaged(races) -> RaceAveraged:
         if race.actual_stops:
             stop_window += race.summary.stop_window_hits / race.actual_stops
             with_stops += 1
+        if race.predicted_strategy_stops:
+            predicted_stops = race.predicted_strategy_stops
+            predicted_hit_rate += race.summary.stop_window_hits / predicted_stops
+            width += race.stop_window_laps / predicted_stops
+            with_predicted_stops += 1
+    recorded = _records_predicted_strategy_stops(races)
     return RaceAveraged(
         top_1_rate_sum=top_1,
         top_3_rate_sum=top_3,
         stop_window_rate_sum=stop_window,
         races_with_scoreable=with_scoreable,
         races_with_stops=with_stops,
+        predicted_strategy_hit_rate_sum=predicted_hit_rate if recorded else None,
+        stop_window_width_sum=width if recorded else None,
+        races_with_predicted_strategy_stops=(
+            with_predicted_stops if recorded else None
+        ),
     )
 
 
@@ -578,6 +635,9 @@ def _totals_lines(totals: ScoreTotals) -> list[str]:
         f"  Top-1 Strategy Match: {_credit(totals.top_1_credit, scoreable)}",
         f"  Top-3 Strategy Match: {_credit(totals.top_3_credit, scoreable)}",
         f"  Stop Window hits: {_hits(totals.stop_window_hits, stops)}",
+        "  Stop Window hits on predicted Strategies: "
+        + _predicted_strategy_hits(totals),
+        f"  Average Stop Window width: {_average_width(totals)}",
     ]
 
 
@@ -589,7 +649,46 @@ def _averaged_lines(averaged: RaceAveraged) -> list[str]:
         f"{_mean_rate(averaged.top_3_rate_sum, averaged.races_with_scoreable)}",
         f"  Stop Window hits: "
         f"{_mean_rate(averaged.stop_window_rate_sum, averaged.races_with_stops)}",
+        "  Stop Window hits on predicted Strategies: "
+        + _averaged_or_not_recorded(
+            averaged.predicted_strategy_hit_rate_sum,
+            averaged.races_with_predicted_strategy_stops,
+            _mean_rate,
+        ),
+        "  Average Stop Window width: "
+        + _averaged_or_not_recorded(
+            averaged.stop_window_width_sum,
+            averaged.races_with_predicted_strategy_stops,
+            _mean_laps,
+        ),
     ]
+
+
+_NOT_RECORDED = "not recorded (saved before format version 3)"
+
+
+def _predicted_strategy_hits(totals: ScoreTotals) -> str:
+    stops = totals.predicted_strategy_stops
+    if stops is None:
+        return _NOT_RECORDED
+    pct = f" ({totals.stop_window_hits / stops:.0%})" if stops else ""
+    return f"{totals.stop_window_hits}/{stops} stops{pct}"
+
+
+def _average_width(totals: ScoreTotals) -> str:
+    stops = totals.predicted_strategy_stops
+    if stops is None:
+        return _NOT_RECORDED
+    if not stops:
+        return "— (0 stops)"
+    laps = totals.stop_window_laps
+    return f"{laps / stops:.1f} laps ({laps} laps over {stops} stops)"
+
+
+def _averaged_or_not_recorded(total, races, format_mean) -> str:
+    if races is None:
+        return _NOT_RECORDED
+    return format_mean(total, races)
 
 
 def _credit(credit: float, denominator: int) -> str:
@@ -611,3 +710,9 @@ def _mean_rate(rate_sum: float, denominator: int) -> str:
         return "— (0 races)"
     mean = rate_sum / denominator
     return f"mean {mean:.0%} over {denominator} race(s)"
+
+
+def _mean_laps(laps_sum: float, denominator: int) -> str:
+    if not denominator:
+        return "— (0 races)"
+    return f"mean {laps_sum / denominator:.1f} laps over {denominator} race(s)"

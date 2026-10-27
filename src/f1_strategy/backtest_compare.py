@@ -25,6 +25,9 @@ over would mislead a reader (tickets 04 and 05's review feedback):
   differ, since the two runs scored it on different data; when a side was
   read from a format-version-1 file, which never saved its warnings, that
   is said once instead
+- either side was read from a file before format version 3, which never
+  saved Predicted-Strategy Stops, so Stop Window hits on predicted
+  Strategies and Stop Window width can't be compared (ticket 58)
 """
 
 from __future__ import annotations
@@ -83,13 +86,41 @@ class AveragedChange:
 
 
 @dataclass(frozen=True)
+class WidthChange:
+    """Average Stop Window width before and after, in laps.
+
+    Pooled, `*_total` is the summed width of the Stop Windows of
+    Predicted-Strategy Stops and `*_count` is those stops. Race-averaged,
+    `*_total` sums each race's average width and `*_count` is the races
+    with at least one Predicted-Strategy Stop. `*_mean` is total / count,
+    and `change_laps` is None when either side's count is zero.
+    """
+
+    label: str
+    before_total: float
+    before_count: int
+    after_total: float
+    after_count: int
+    before_mean: float | None
+    after_mean: float | None
+    change_laps: float | None
+
+
+@dataclass(frozen=True)
 class ScoreBucketDiff:
-    """All three headline scores for one bucket (pooled)."""
+    """Every headline score for one bucket (pooled).
+
+    `predicted_strategy_stop_window` and `stop_window_width` are None when
+    either side didn't record its Predicted-Strategy Stops (a file before
+    format version 3).
+    """
 
     label: str
     top_1: ScoreChange
     top_3: ScoreChange
     stop_window: ScoreChange
+    predicted_strategy_stop_window: ScoreChange | None
+    stop_window_width: WidthChange | None
 
 
 @dataclass(frozen=True)
@@ -98,6 +129,8 @@ class AveragedBucketDiff:
     top_1: AveragedChange
     top_3: AveragedChange
     stop_window: AveragedChange
+    predicted_strategy_stop_window: AveragedChange | None
+    stop_window_width: WidthChange | None
 
 
 @dataclass(frozen=True)
@@ -129,6 +162,9 @@ class BacktestComparison:
     top_gainers: tuple[RaceMovement, ...]
     top_losers: tuple[RaceMovement, ...]
     warnings: tuple[str, ...]
+    # "before" and/or "after": the sides that didn't record
+    # Predicted-Strategy Stops, for the formatter's "not recorded" lines.
+    predicted_strategy_stops_not_recorded_in: tuple[str, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -174,12 +210,18 @@ def compare_backtest_results(
             after.all_races_averaged,
         ),
     )
-    by_season = _diff_breakdown(before.by_season, after.by_season, key_label=str)
-    by_circuit = _diff_breakdown(before.by_circuit, after.by_circuit, key_label=str)
+    empties = (_empty_like(before.all_races), _empty_like(after.all_races))
+    by_season = _diff_breakdown(
+        before.by_season, after.by_season, key_label=str, empties=empties
+    )
+    by_circuit = _diff_breakdown(
+        before.by_circuit, after.by_circuit, key_label=str, empties=empties
+    )
     by_sprint = _diff_breakdown(
         before.by_sprint_weekend,
         after.by_sprint_weekend,
         key_label=lambda k: "sprint" if k else "conventional",
+        empties=empties,
     )
 
     movements = _race_movements(before.races, after.races)
@@ -190,6 +232,11 @@ def compare_backtest_results(
         m for m in sorted(movements, key=lambda m: m.change_pp) if m.change_pp < 0
     )[:top_n]
 
+    not_recorded = tuple(
+        side
+        for side, result in (("before", before), ("after", after))
+        if result.all_races.predicted_strategy_stops is None
+    )
     warnings = _scope_warnings(before, after, before_metadata, after_metadata)
 
     return BacktestComparison(
@@ -201,6 +248,7 @@ def compare_backtest_results(
         top_gainers=gainers,
         top_losers=losers,
         warnings=warnings,
+        predicted_strategy_stops_not_recorded_in=not_recorded,
     )
 
 
@@ -227,6 +275,59 @@ def _bucket(label: str, before: ScoreTotals, after: ScoreTotals) -> ScoreBucketD
             before.stop_window_hits, before.actual_stops,
             after.stop_window_hits, after.actual_stops,
         ),
+        predicted_strategy_stop_window=(
+            _score_change(
+                _PREDICTED_STRATEGY_HITS,
+                before.stop_window_hits, before.predicted_strategy_stops,
+                after.stop_window_hits, after.predicted_strategy_stops,
+            )
+            if _both_recorded(before, after)
+            else None
+        ),
+        stop_window_width=(
+            _width_change(
+                before.stop_window_laps, before.predicted_strategy_stops,
+                after.stop_window_laps, after.predicted_strategy_stops,
+            )
+            if _both_recorded(before, after)
+            else None
+        ),
+    )
+
+
+_PREDICTED_STRATEGY_HITS = "Stop Window hits on predicted Strategies"
+_WIDTH = "Average Stop Window width"
+
+
+def _both_recorded(before: ScoreTotals, after: ScoreTotals) -> bool:
+    return (
+        before.predicted_strategy_stops is not None
+        and after.predicted_strategy_stops is not None
+    )
+
+
+def _width_change(
+    before_total: float,
+    before_count: int,
+    after_total: float,
+    after_count: int,
+) -> WidthChange:
+    before_mean = (before_total / before_count) if before_count else None
+    after_mean = (after_total / after_count) if after_count else None
+    change_laps: float | None
+    if before_mean is None or after_mean is None:
+        change_laps = None
+    else:
+        change_laps = after_mean - before_mean
+    return WidthChange(
+        label=_WIDTH,
+        before_total=before_total,
+        before_count=before_count,
+        after_total=after_total,
+        after_count=after_count,
+        before_mean=before_mean,
+        after_mean=after_mean,
+        change_laps=change_laps,
     )
 
 
@@ -264,6 +365,10 @@ def _score_change(
 def _averaged_bucket(
     label: str, before: RaceAveraged, after: RaceAveraged
 ) -> AveragedBucketDiff:
+    recorded = (
+        before.races_with_predicted_strategy_stops is not None
+        and after.races_with_predicted_strategy_stops is not None
+    )
     return AveragedBucketDiff(
         label=label,
         top_1=_averaged_change(
@@ -280,6 +385,27 @@ def _averaged_bucket(
             "Stop Window hits",
             before.stop_window_rate_sum, before.races_with_stops,
             after.stop_window_rate_sum, after.races_with_stops,
+        ),
+        predicted_strategy_stop_window=(
+            _averaged_change(
+                _PREDICTED_STRATEGY_HITS,
+                before.predicted_strategy_hit_rate_sum,
+                before.races_with_predicted_strategy_stops,
+                after.predicted_strategy_hit_rate_sum,
+                after.races_with_predicted_strategy_stops,
+            )
+            if recorded
+            else None
+        ),
+        stop_window_width=(
+            _width_change(
+                before.stop_window_width_sum,
+                before.races_with_predicted_strategy_stops,
+                after.stop_window_width_sum,
+                after.races_with_predicted_strategy_stops,
+            )
+            if recorded
+            else None
         ),
     )
 
@@ -313,7 +439,18 @@ def _averaged_change(
 # ---------------------------------------------------------------------------
 
 
-_EMPTY = ScoreTotals(0, 0.0, 0.0, 0, 0, 0)
+def _empty_like(totals: ScoreTotals) -> ScoreTotals:
+    """An empty bucket for a breakdown key missing on one side.
+
+    Predicted-Strategy Stops stay not recorded (None) when that side's
+    result never recorded them, so the missing key doesn't read as 0 stops.
+    """
+    recorded = totals.predicted_strategy_stops is not None
+    return ScoreTotals(
+        0, 0.0, 0.0, 0, 0, 0,
+        predicted_strategy_stops=0 if recorded else None,
+        stop_window_laps=0 if recorded else None,
+    )
 
 
 def _diff_breakdown(
@@ -321,17 +458,22 @@ def _diff_breakdown(
     after: Mapping[Any, ScoreTotals],
     *,
     key_label,
+    empties: tuple[ScoreTotals, ScoreTotals],
 ) -> dict[Any, ScoreBucketDiff]:
     """Pairwise score diffs per group key, including keys present on only one side.
 
     A key only in `before` has an empty `after` bucket (zero everything,
     percentage None); a key only in `after` has an empty `before`. The
-    caller renders those as "removed" and "added" respectively.
+    caller renders those as "removed" and "added" respectively. `empties`
+    is the (before, after) empty bucket.
     """
+    empty_before, empty_after = empties
     keys = sorted(set(before) | set(after), key=key_label)
     return {
         key: _bucket(
-            key_label(key), before.get(key, _EMPTY), after.get(key, _EMPTY)
+            key_label(key),
+            before.get(key, empty_before),
+            after.get(key, empty_after),
         )
         for key in keys
     }
@@ -455,6 +597,11 @@ def _scope_warnings(
             before, after, shared, before_metadata, after_metadata
         )
     )
+    warnings.extend(
+        _predicted_strategy_stops_unrecorded(
+            before, after, before_metadata, after_metadata
+        )
+    )
 
     if before.tuning_seasons != after.tuning_seasons:
         warnings.append(
@@ -511,6 +658,38 @@ def _data_quality_warnings_diff(
     ]
 
 
+def _predicted_strategy_stops_unrecorded(
+    before: BacktestResult,
+    after: BacktestResult,
+    before_metadata: RunMetadata | None,
+    after_metadata: RunMetadata | None,
+) -> list[str]:
+    unrecorded = [
+        (side, metadata)
+        for side, result, metadata in (
+            ("before", before, before_metadata),
+            ("after", after, after_metadata),
+        )
+        if result.all_races.predicted_strategy_stops is None
+    ]
+    if not unrecorded:
+        return []
+    versions = sorted(
+        {metadata.format_version for _, metadata in unrecorded if metadata}
+    )
+    if versions and all(metadata for _, metadata in unrecorded):
+        noun = "format version" if len(versions) == 1 else "format versions"
+        saved_in = f"{noun} {' and '.join(map(str, versions))}"
+    else:
+        saved_in = "a format version before 3"
+    verb = "was" if len(unrecorded) == 1 else "were"
+    return [
+        f"{_PREDICTED_STRATEGY_HITS} and Stop Window width can't be compared: "
+        f"{' and '.join(side for side, _ in unrecorded)} {verb} saved in "
+        f"{saved_in}, which didn't record them"
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Formatting
 # ---------------------------------------------------------------------------
@@ -531,32 +710,33 @@ def format_comparison(comparison: BacktestComparison) -> str:
             lines.append(f"  ! {w}")
         lines.append("")
 
+    not_recorded = comparison.predicted_strategy_stops_not_recorded_in
     lines.append("Headline (pooled):")
     for bucket in comparison.pooled:
-        lines += _bucket_lines(bucket)
+        lines += _bucket_lines(bucket, not_recorded)
     lines.append("")
 
     lines.append("Headline (race-averaged):")
     for bucket in comparison.averaged:
-        lines += _averaged_bucket_lines(bucket)
+        lines += _averaged_bucket_lines(bucket, not_recorded)
     lines.append("")
 
     if comparison.by_season:
         lines.append("By season:")
         for key in sorted(comparison.by_season):
-            lines += _bucket_lines(comparison.by_season[key])
+            lines += _bucket_lines(comparison.by_season[key], not_recorded)
         lines.append("")
 
     if comparison.by_circuit:
         lines.append("By circuit:")
         for key in sorted(comparison.by_circuit):
-            lines += _bucket_lines(comparison.by_circuit[key])
+            lines += _bucket_lines(comparison.by_circuit[key], not_recorded)
         lines.append("")
 
     if comparison.by_sprint_weekend:
         lines.append("Sprint vs conventional:")
         for key in sorted(comparison.by_sprint_weekend):
-            lines += _bucket_lines(comparison.by_sprint_weekend[key])
+            lines += _bucket_lines(comparison.by_sprint_weekend[key], not_recorded)
         lines.append("")
 
     lines.append("Biggest gainers (top-1 Strategy Match rate):")
@@ -577,22 +757,72 @@ def format_comparison(comparison: BacktestComparison) -> str:
     return "\n".join(lines)
 
 
-def _bucket_lines(bucket: ScoreBucketDiff) -> list[str]:
+def _bucket_lines(
+    bucket: ScoreBucketDiff, not_recorded: tuple[str, ...]
+) -> list[str]:
     return [
         f"  {bucket.label}:",
         f"    {_score_change_line(bucket.top_1)}",
         f"    {_score_change_line(bucket.top_3)}",
         f"    {_score_change_line(bucket.stop_window)}",
+        "    "
+        + (
+            _score_change_line(bucket.predicted_strategy_stop_window)
+            if bucket.predicted_strategy_stop_window is not None
+            else _not_recorded_line(_PREDICTED_STRATEGY_HITS, not_recorded)
+        ),
+        "    "
+        + (
+            _width_change_line(bucket.stop_window_width, unit="stops")
+            if bucket.stop_window_width is not None
+            else _not_recorded_line(_WIDTH, not_recorded)
+        ),
     ]
 
 
-def _averaged_bucket_lines(bucket: AveragedBucketDiff) -> list[str]:
+def _averaged_bucket_lines(
+    bucket: AveragedBucketDiff, not_recorded: tuple[str, ...]
+) -> list[str]:
     return [
         f"  {bucket.label}:",
         f"    {_averaged_change_line(bucket.top_1)}",
         f"    {_averaged_change_line(bucket.top_3)}",
         f"    {_averaged_change_line(bucket.stop_window)}",
+        "    "
+        + (
+            _averaged_change_line(bucket.predicted_strategy_stop_window)
+            if bucket.predicted_strategy_stop_window is not None
+            else _not_recorded_line(_PREDICTED_STRATEGY_HITS, not_recorded)
+        ),
+        "    "
+        + (
+            _width_change_line(bucket.stop_window_width, unit="races")
+            if bucket.stop_window_width is not None
+            else _not_recorded_line(_WIDTH, not_recorded)
+        ),
     ]
+
+
+def _not_recorded_line(label: str, sides: tuple[str, ...]) -> str:
+    return f"{label}: not recorded in {' and '.join(sides)}"
+
+
+def _width_change_line(change: WidthChange, *, unit: str) -> str:
+    before = _fmt_width(change.before_mean, change.before_count, unit)
+    after = _fmt_width(change.after_mean, change.after_count, unit)
+    if change.change_laps is None:
+        delta = "no change computable"
+    else:
+        delta = f"{change.change_laps:+.1f} laps"
+    return f"{change.label}: {before} → {after} ({delta})"
+
+
+def _fmt_width(mean: float | None, count: int, unit: str) -> str:
+    if mean is None:
+        return f"— (0 {unit})"
+    if unit == "races":
+        return f"mean {mean:.1f} laps over {count} race(s)"
+    return f"{mean:.1f} laps over {count} stops"
 
 
 def _score_change_line(change: ScoreChange) -> str:

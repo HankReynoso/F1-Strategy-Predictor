@@ -37,10 +37,12 @@ from .degradation import DegradationSource
 from .scorer import RaceSummary
 from .settings import Settings
 
-FORMAT_VERSION = 2
+FORMAT_VERSION = 3
 # Version 1 files predate saved Data Quality Warnings (ticket 39); they load
-# with none. See ADR-0005's Versioning section.
-_READABLE_VERSIONS = (1, 2)
+# with none. Versions 1 and 2 predate saved Predicted-Strategy Stops and
+# Stop Window laps (ticket 58); they load with both not recorded (None).
+# See ADR-0005's Versioning section.
+_READABLE_VERSIONS = (1, 2, 3)
 
 
 @dataclass(frozen=True)
@@ -100,8 +102,10 @@ def load_backtest_result(path: Path | str) -> tuple[BacktestResult, RunMetadata]
 
     An unknown `format_version` is refused with a clear error rather than
     guessed at. A version-1 file loads with no Data Quality Warnings, since
-    it never saved them. Unknown keys are ignored, so a file with a field
-    this build has since removed still loads.
+    it never saved them, and a file before version 3 loads with its
+    Predicted-Strategy Stops and Stop Window laps not recorded. Unknown
+    keys are ignored, so a file with a field this build has since removed
+    still loads.
     """
     path = Path(path)
     payload = json.loads(path.read_text())
@@ -156,6 +160,8 @@ def _encode_race(race: RaceResult) -> dict:
         "pit_loss_seasons": list(race.pit_loss_seasons),
         "estimated_pit_loss": race.estimated_pit_loss,
         "actual_stops": race.actual_stops,
+        "predicted_strategy_stops": race.predicted_strategy_stops,
+        "stop_window_laps": race.stop_window_laps,
         "summary": {
             "scoreable_drivers": race.summary.scoreable_drivers,
             "top_1_credit": race.summary.top_1_credit,
@@ -237,6 +243,11 @@ def _decode_race(data: dict, version: int) -> RaceResult:
         history_warnings=(
             tuple(data["data_quality_warnings"]) if version >= 2 else ()
         ),
+        # Required from version 3; before that they were never saved.
+        predicted_strategy_stops=(
+            data["predicted_strategy_stops"] if version >= 3 else None
+        ),
+        stop_window_laps=data["stop_window_laps"] if version >= 3 else None,
     )
 
 

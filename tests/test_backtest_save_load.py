@@ -244,6 +244,9 @@ def _rewrite_as_version_1(path: Path) -> None:
     data["format_version"] = 1
     for race in data["races"]:
         del race["data_quality_warnings"]
+        # Version 3's keys (ticket 58) didn't exist then either.
+        del race["predicted_strategy_stops"]
+        del race["stop_window_laps"]
     path.write_text(json.dumps(data, indent=2))
 
 
@@ -277,8 +280,11 @@ def test_a_version_1_file_loads_with_no_data_quality_warnings(tmp_path):
     reloaded, reloaded_metadata = load_backtest_result(paths.data)
 
     # Everything else reads back; the warnings a version-1 file never held
-    # read as none.
-    assert reloaded.races == _warned_result(with_warnings=False).races
+    # read as none, and its Predicted-Strategy Stops as not recorded.
+    assert reloaded.races == tuple(
+        replace(race, predicted_strategy_stops=None, stop_window_laps=None)
+        for race in _warned_result(with_warnings=False).races
+    )
     assert "Data quality warnings" not in format_backtest(reloaded)
     assert reloaded_metadata.format_version == 1
 
@@ -288,7 +294,7 @@ def test_a_saved_file_records_its_format_version_on_the_metadata(tmp_path):
 
     _, reloaded_metadata = load_backtest_result(paths.data)
 
-    assert reloaded_metadata.format_version == 2
+    assert reloaded_metadata.format_version == 3
 
 
 @pytest.mark.parametrize(
@@ -357,7 +363,7 @@ def test_metadata_records_label_run_time_code_version_and_seasons(tmp_path):
     paths = save_backtest_result(result, tmp_path, metadata=metadata)
     data = json.loads(paths.data.read_text())
 
-    assert data["format_version"] == 2
+    assert data["format_version"] == 3
     assert data["metadata"]["label"] == "tuning-pass-1"
     assert data["metadata"]["run_at"] == "2026-10-21T18:30:00+00:00"
     assert data["metadata"]["code_commit"] == "deadbeefcafe1234"

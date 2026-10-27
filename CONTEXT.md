@@ -19,7 +19,7 @@ The tyre type fitted for a Stint, named by its race designation (Soft, Medium, H
 _Avoid_: tyre, rubber
 
 **Stop Window**:
-The range of laps in which a planned pit stop is expected to happen: every stop lap whose Simulated Race Time, with the Strategy's other stops moved to suit, is within a margin of the best stop lap.
+The range of laps in which a planned pit stop is expected to happen: every stop lap whose Simulated Race Time, with the Strategy's other stops moved to suit, is within a margin of the best stop lap. Its width is the number of laps it spans, both ends counted ("lap 5–5" is 1 lap wide).
 _Avoid_: pit window (fine in speech), stop lap
 
 **Deviation**:
@@ -147,6 +147,10 @@ _Avoid_: report, run output
 **Strategy Match**:
 A prediction whose stop count and Compound sequence equal what the driver actually ran. Stop Window accuracy is scored separately.
 _Avoid_: hit, correct prediction
+
+**Predicted-Strategy Stop**:
+An actual pit stop by a scoreable driver whose actual Strategy is one of their Candidate Strategies. It is scored against that Candidate Strategy's Stop Window; a stop on any other Strategy can never be a Stop Window hit.
+_Avoid_: matched stop, scoreable stop
 
 **Neutralised Race**:
 A race that had a Safety Car or Virtual Safety Car period. Scored separately in Backtests because its Deviations can't be predicted beforehand.

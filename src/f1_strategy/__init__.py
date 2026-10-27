@@ -17,6 +17,7 @@ from .backtest_compare import (
     RaceMovement,
     ScoreBucketDiff,
     ScoreChange,
+    WidthChange,
     compare_backtest_results,
     format_comparison,
 )
@@ -91,6 +92,7 @@ __all__ = [
     "SavedPaths",
     "ScoreBucketDiff",
     "ScoreChange",
+    "WidthChange",
     "SMOKE_SET",
     "ScoreTotals",
     "Session",
