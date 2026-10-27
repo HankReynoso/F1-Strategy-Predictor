@@ -18,11 +18,14 @@ import pytest
 
 from f1_strategy import SMOKE_SET, run_backtest
 from f1_strategy.data import load_weekend
+from f1_strategy.openf1_client import OpenF1Client
 
 pytestmark = pytest.mark.slow
 
 FASTF1_CACHE_DIR = Path(__file__).resolve().parents[1] / ".cache" / "fastf1"
 OPENF1_CACHE_DIR = Path(__file__).resolve().parents[1] / ".cache" / "openf1"
+# One OpenF1 client for the whole Smoke Set, as the CLI uses (ticket 42).
+OPENF1_CLIENT = OpenF1Client(cache_dir=OPENF1_CACHE_DIR)
 
 
 def _loader(season: int, event: str):
@@ -30,7 +33,7 @@ def _loader(season: int, event: str):
         season,
         event,
         fastf1_cache_dir=FASTF1_CACHE_DIR,
-        openf1_cache_dir=OPENF1_CACHE_DIR,
+        openf1_client=OPENF1_CLIENT,
     )
 
 

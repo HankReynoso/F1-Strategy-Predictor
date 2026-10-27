@@ -21,8 +21,10 @@ through `predict` and `compare`, printing progress and the Backtest Result.
 from __future__ import annotations
 
 import argparse
+import functools
 import sys
 from collections.abc import Callable, Sequence
+from pathlib import Path
 
 from .backtest import SMOKE_SET, RaceSpec, format_backtest, run_backtest
 from .backtest_compare import compare_backtest_results, format_comparison
@@ -33,6 +35,7 @@ from .backtest_io import (
     load_backtest_result,
     save_backtest_result,
 )
+from .openf1_client import OpenF1Client
 from .predictor import NotDryRaceError, predict
 from .report import format_header, format_summary, format_table
 from .scorer import compare
@@ -236,21 +239,29 @@ def _fastf1_load() -> Loader:
     cross-source :func:`data.load_weekend`, not the single-source
     FastF1 one.
     """
-    import fastf1
-
-    from .data import load_weekend
-
-    fastf1.set_log_level("WARNING")
-    return load_weekend
+    load, _ = _fastf1_load_and_list()
+    return load
 
 
 def _fastf1_load_and_list() -> tuple[Loader, SeasonLister]:
+    """The default loader and season lister for one run, sharing one
+    OpenF1 client (ticket 42).
+
+    The client keeps OpenF1's 3-per-second and 30-per-minute limits by
+    remembering its recent requests. Called with no client, the router
+    builds a new one per race, so each race would start with an empty
+    memory and could burst past the limit the previous race had reached.
+    """
     import fastf1
 
     from .data import list_season, load_weekend
 
     fastf1.set_log_level("WARNING")
-    return load_weekend, list_season
+    openf1_client = OpenF1Client(cache_dir=Path(".cache/openf1"))
+    return (
+        functools.partial(load_weekend, openf1_client=openf1_client),
+        functools.partial(list_season, openf1_client=openf1_client),
+    )
 
 
 if __name__ == "__main__":

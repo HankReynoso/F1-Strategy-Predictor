@@ -103,3 +103,5 @@ Why Singapore 2024 moved: the 2022 Marina Bay median is 35.16 s (FastF1) and the
 - The double count was real but small in effect: +0.55 s Pit Loss for 2024 Singapore and +0.30 s for 2025, with no score change, because neither race uses Circuit History. It would have mattered more at a circuit whose predictions do lean on Historical Degradation.
 - The Smoke Set test only range-checked Singapore's Pit Loss (25–40 s), which is why a 0.5 s error passed unnoticed. It is now pinned to two decimals. Consider pinning Pit Loss for the other Smoke Set races the same way.
 
+**Correction (ticket 42, 2026-10-26).** The proof script above set `fastf1.Cache.offline_mode(True)`. FastF1's loaders call `fastf1.Cache.enable_cache` again, which silently turns offline mode off, so FastF1 was not guaranteed offline. The script only read 2022 schedules, which were in the cache, so the findings stand.
+
