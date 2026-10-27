@@ -37,7 +37,10 @@ from .degradation import DegradationSource
 from .scorer import RaceSummary
 from .settings import Settings
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
+# Version 1 files predate saved Data Quality Warnings (ticket 39); they load
+# with none. See ADR-0005's Versioning section.
+_READABLE_VERSIONS = (1, 2)
 
 
 @dataclass(frozen=True)
@@ -48,7 +51,9 @@ class RunMetadata:
     that made it; `seasons_in_scope` lets the compare command warn when
     two runs don't cover the same races; `settings` is carried whole so a
     tuned run reads back with the same thresholds and the same
-    tuning/held-out partition.
+    tuning/held-out partition. `format_version` is the version of the file
+    it was read from; a save always writes `FORMAT_VERSION`, so a caller
+    building metadata for a new run leaves it at the default.
     """
 
     label: str
@@ -57,6 +62,7 @@ class RunMetadata:
     uncommitted_changes: bool
     seasons_in_scope: tuple[int, ...]
     settings: Settings
+    format_version: int = FORMAT_VERSION
 
 
 @dataclass(frozen=True)
@@ -93,19 +99,20 @@ def load_backtest_result(path: Path | str) -> tuple[BacktestResult, RunMetadata]
     """Read a saved Backtest Result's data file; recompute aggregates.
 
     An unknown `format_version` is refused with a clear error rather than
-    guessed at. Unknown keys at version 1 are ignored, so an older file
-    with fields a later version added still loads.
+    guessed at. A version-1 file loads with no Data Quality Warnings, since
+    it never saved them. Unknown keys are ignored, so a file with a field
+    this build has since removed still loads.
     """
     path = Path(path)
     payload = json.loads(path.read_text())
     version = payload.get("format_version")
-    if version != FORMAT_VERSION:
+    if version not in _READABLE_VERSIONS:
         raise ValueError(
             f"Unsupported format_version {version!r} in {path} "
-            f"(this build reads version {FORMAT_VERSION})"
+            f"(this build reads versions {', '.join(map(str, _READABLE_VERSIONS))})"
         )
-    metadata = _decode_metadata(payload["metadata"])
-    races = tuple(_decode_race(entry) for entry in payload["races"])
+    metadata = _decode_metadata(payload["metadata"], version)
+    races = tuple(_decode_race(entry, version) for entry in payload["races"])
     excluded = tuple(_decode_excluded(entry) for entry in payload["excluded"])
     return _rebuild_result(races, excluded, metadata.settings), metadata
 
@@ -159,6 +166,8 @@ def _encode_race(race: RaceResult) -> dict:
         "degradation_sources": {
             source.value: count for source, count in race.degradation_sources.items()
         },
+        # Saved under the name ticket 34 gives the in-code field.
+        "data_quality_warnings": list(race.history_warnings),
     }
 
 
@@ -176,7 +185,7 @@ def _encode_excluded(excluded: ExcludedRace) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _decode_metadata(data: dict) -> RunMetadata:
+def _decode_metadata(data: dict, version: int) -> RunMetadata:
     return RunMetadata(
         label=data["label"],
         run_at=data["run_at"],
@@ -184,6 +193,7 @@ def _decode_metadata(data: dict) -> RunMetadata:
         uncommitted_changes=bool(data["uncommitted_changes"]),
         seasons_in_scope=tuple(data["seasons_in_scope"]),
         settings=_decode_settings(data["settings"]),
+        format_version=version,
     )
 
 
@@ -201,7 +211,7 @@ _REASON_BY_VALUE = {r.value: r for r in ExclusionReason}
 _SOURCE_BY_VALUE = {s.value: s for s in DegradationSource}
 
 
-def _decode_race(data: dict) -> RaceResult:
+def _decode_race(data: dict, version: int) -> RaceResult:
     summary = data["summary"]
     return RaceResult(
         season=data["season"],
@@ -223,6 +233,10 @@ def _decode_race(data: dict) -> RaceResult:
             for key, count in data["degradation_sources"].items()
         },
         estimated_pit_loss=bool(data.get("estimated_pit_loss", False)),
+        # Required from version 2; a version-1 file never saved them.
+        history_warnings=(
+            tuple(data["data_quality_warnings"]) if version >= 2 else ()
+        ),
     )
 
 

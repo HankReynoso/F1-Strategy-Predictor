@@ -8,6 +8,7 @@ command does.
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -398,6 +399,64 @@ def test_different_estimated_pit_loss_races_produce_a_warning(tmp_path):
 
     assert any(
         "estimated Pit Loss" in w and "Alpha GP" in w for w in comp.warnings
+    )
+
+
+_STINTS_WARNING = "Race /v1/stints: dropped 1 of 57 rows with empty lap_start/lap_end"
+
+
+def _warned(base: RaceWeekend, *warnings: str) -> RaceWeekend:
+    return replace(
+        base,
+        pre_race=replace(base.pre_race, data_quality_warnings=tuple(warnings)),
+    )
+
+
+def test_different_data_quality_warnings_produce_a_warning(tmp_path):
+    # Alpha gains a warning in the after run; Beta's is the same on both
+    # sides, so only Alpha is named.
+    beta = _warned(_green(circuit="Beta"), "2023 Beta: no usable past-race samples")
+    before_wk = {(2024, "Alpha GP"): _green(circuit="Alpha"), (2024, "Beta GP"): beta}
+    after_wk = {
+        (2024, "Alpha GP"): _warned(_green(circuit="Alpha"), _STINTS_WARNING),
+        (2024, "Beta GP"): beta,
+    }
+    before, bmd = load_backtest_result(_run_and_save(tmp_path, before_wk, "b"))
+    after, amd = load_backtest_result(_run_and_save(tmp_path, after_wk, "a"))
+
+    comp = compare_backtest_results(
+        before, after, before_metadata=bmd, after_metadata=amd
+    )
+
+    differing = [w for w in comp.warnings if "Data Quality Warnings differ" in w]
+    assert len(differing) == 1
+    assert "2024 Alpha GP" in differing[0]
+    assert "Beta GP" not in differing[0]
+
+
+def test_comparing_with_a_version_1_file_says_its_warnings_were_not_saved(
+    tmp_path,
+):
+    # A file saved before ticket 39 never held its warnings, so a per-race
+    # diff against it would name every warned race for no reason.
+    wk = {(2024, "Alpha GP"): _warned(_green(circuit="Alpha"), _STINTS_WARNING)}
+    before_path = _run_and_save(tmp_path, wk, "b")
+    data = json.loads(before_path.read_text())
+    data["format_version"] = 1
+    for race in data["races"]:
+        del race["data_quality_warnings"]
+    before_path.write_text(json.dumps(data))
+    before, bmd = load_backtest_result(before_path)
+    after, amd = load_backtest_result(_run_and_save(tmp_path, wk, "a"))
+
+    comp = compare_backtest_results(
+        before, after, before_metadata=bmd, after_metadata=amd
+    )
+
+    assert not any("Data Quality Warnings differ" in w for w in comp.warnings)
+    assert any(
+        "before" in w and "format version 1" in w and "Data Quality Warnings" in w
+        for w in comp.warnings
     )
 
 

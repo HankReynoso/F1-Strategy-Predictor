@@ -15,3 +15,5 @@ Found during ticket 30. Ticket 30 left the field name alone because renaming it 
 - [ ] One field name for all Data Quality Warnings on `RaceResult`
 - [ ] Saved results from before the rename still load (alias or format bump per ADR-0005)
 - [ ] `CONTEXT.md` **Data Quality Warning** entry still matches
+
+**Ticket 39 (2026-10-26).** The saved Backtest Result now writes the warnings under `data_quality_warnings` (format version 2, ADR-0005). The rename here is code-only: `RaceResult.history_warnings` becomes `data_quality_warnings`, and `backtest_io._encode_race` / `_decode_race` and `backtest_compare._data_quality_warnings_diff` follow. There is no format bump and no read alias. The second criterion above is already met.

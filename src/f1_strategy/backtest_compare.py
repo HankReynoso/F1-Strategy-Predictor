@@ -21,6 +21,10 @@ over would mislead a reader (tickets 04 and 05's review feedback):
 - the set of races whose Pit Loss was estimated (ticket 07) differs,
   since the two runs are comparing a measured race on one side and an
   estimate on the other
+- the Data Quality Warnings (tickets 28, 30) of a race scored on both sides
+  differ, since the two runs scored it on different data; when a side was
+  read from a format-version-1 file, which never saved its warnings, that
+  is said once instead
 """
 
 from __future__ import annotations
@@ -446,6 +450,12 @@ def _scope_warnings(
             "Results (" + ", ".join(f"{s} {e}" for s, e in sorted(flipped)) + ")"
         )
 
+    warnings.extend(
+        _data_quality_warnings_diff(
+            before, after, shared, before_metadata, after_metadata
+        )
+    )
+
     if before.tuning_seasons != after.tuning_seasons:
         warnings.append(
             f"Tuning Seasons differ: before={list(before.tuning_seasons)}, "
@@ -466,6 +476,39 @@ def _scope_warnings(
             )
 
     return tuple(warnings)
+
+
+def _data_quality_warnings_diff(
+    before: BacktestResult,
+    after: BacktestResult,
+    shared: set[tuple[int, str]],
+    before_metadata: RunMetadata | None,
+    after_metadata: RunMetadata | None,
+) -> list[str]:
+    unsaved = [
+        side
+        for side, metadata in (("before", before_metadata), ("after", after_metadata))
+        if metadata is not None and metadata.format_version < 2
+    ]
+    if unsaved:
+        # Every warned race on the other side would differ for no reason.
+        verb = "was" if len(unsaved) == 1 else "were"
+        return [
+            f"Data Quality Warnings can't be compared: {' and '.join(unsaved)} "
+            f"{verb} saved in format version 1, which didn't record them"
+        ]
+    warnings_before = {(r.season, r.event): r.history_warnings for r in before.races}
+    warnings_after = {(r.season, r.event): r.history_warnings for r in after.races}
+    differing = sorted(
+        key for key in shared if warnings_before[key] != warnings_after[key]
+    )
+    if not differing:
+        return []
+    return [
+        "Data Quality Warnings differ between the two Backtest Results ("
+        + ", ".join(f"{s} {e}" for s, e in differing)
+        + ")"
+    ]
 
 
 # ---------------------------------------------------------------------------

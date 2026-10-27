@@ -133,7 +133,7 @@ A small fixed set of races covering every path through the model, run as a quick
 _Avoid_: sample races, quick set
 
 **Backtest Result**:
-The saved record of one Backtest run: its scores overall and by breakdown, its Excluded Races, the settings used and the code version.
+The saved record of one Backtest run: its scores overall and by breakdown, each scored race's Data Quality Warnings, its Excluded Races, the settings used and the code version.
 _Avoid_: report, run output
 
 **Strategy Match**:

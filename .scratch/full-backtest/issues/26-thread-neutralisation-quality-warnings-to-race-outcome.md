@@ -37,3 +37,5 @@ Ready as written; low priority, doesn't block the baseline (24). Acceptance crit
 - [ ] A hand-built fixture with a missing VSC ENDING or SC IN THIS LAP event carries its warning through the race outcome into the saved and re-read Backtest Result
 - [ ] The Backtest summary lists races with warnings; a clean race shows none
 - [ ] If ticket 28 lands first, its "empty history" reasons use the same warnings record rather than a second mechanism
+
+**Ticket 39 (2026-10-26).** `RaceResult`'s warnings tuple is now saved (`data_quality_warnings`, format version 2) and compared. Put race-control warnings into that same tuple in `run_backtest`, not a second `RaceResult` field. They are then saved, reloaded and compared with no `backtest_io` change and no format bump. Best done after, or with, ticket 34's rename.

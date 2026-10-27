@@ -4,13 +4,13 @@ A full Backtest run writes two files side by side in a `results/backtest/` folde
 
 ## Format
 
-- **JSON**, UTF-8, two-space indent. Python stdlib covers read and write; a human can diff it on a PR; the compare command can load two of them without extra dependencies. The file carries `"format_version": 1` at the top so a reader can refuse or migrate an older file instead of mis-parsing it.
+- **JSON**, UTF-8, two-space indent. Python stdlib covers read and write; a human can diff it on a PR; the compare command can load two of them without extra dependencies. The file carries `"format_version"` at the top (currently `2`) so a reader can refuse or migrate an older file instead of mis-parsing it.
 - Only **per-race records**, **Excluded Races** and **run metadata** are stored. Every aggregate on `BacktestResult` (headlines, race-averaged, breakdowns, Degradation source counts) is derivable from the per-race records plus `Settings`, so a reload recomputes them with the same code path `run_backtest` used. A later aggregation change then benefits an old file without migrating it.
 - Enum members serialise as their `.value` string (`DegradationSource.LONG_RUNS` → `"long_runs"`, `ExclusionReason.NOT_DRY_RACE` → `"not a Dry Race"`); JSON has no enum type and the string form is already the printed form. The sprint/conventional breakdown bool key isn't serialised at all — it's recomputed from `RaceResult.is_sprint_weekend` on load, matching the formatter's `True`/`False` → `sprint`/`conventional` rendering. `by_circuit` ordering follows per-race insertion order in the saved file; Python dict equality is order-independent and the formatter sorts at print time, so order in the file doesn't matter for identity.
 
 ## What's saved per race
 
-Everything on `RaceResult`: `season`, `event`, `circuit`, `is_sprint_weekend`, `neutralised_race`, `estimated_pit_loss`, `actual_stops`, the `RaceSummary` (`scoreable_drivers`, `top_1_credit`, `top_3_credit`, `stop_window_hits`) and the per-race `degradation_sources` map. **Scores and metadata only, never raw timing data** — a saved file for a four-season Backtest is a few tens of KB, safe to commit.
+Everything on `RaceResult`: `season`, `event`, `circuit`, `is_sprint_weekend`, `neutralised_race`, `estimated_pit_loss`, `actual_stops`, the `RaceSummary` (`scoreable_drivers`, `top_1_credit`, `top_3_credit`, `stop_window_hits`), the per-race `degradation_sources` map, and the race's Data Quality Warnings as a list of strings under `data_quality_warnings` (from version 2; ticket 39). The JSON key is the name ticket 34 gives the in-code field (`RaceResult.history_warnings` today), so that rename doesn't touch the file; ticket 26's race-control warnings join the same list. **Scores and metadata only, never raw timing data** — a saved file for a four-season Backtest is a few tens of KB, safe to commit.
 
 ## What's saved as run metadata
 
@@ -35,4 +35,11 @@ Smoke Set runs print their result but don't save by default (spec story 43). Sav
 
 ## Versioning
 
-`format_version: 1` is the only version today. A breaking change (new required field, renamed field, different enum encoding) bumps the version; the loader refuses an unknown version rather than guessing. Additive, defaulted fields (a new optional per-race flag, say) stay at version 1 — old files load with the default, new files save the value. Removed fields also stay at version 1 — the loader ignores unknown keys.
+A breaking change (new required field, renamed field, different enum encoding) bumps the version; the loader refuses an unknown version rather than guessing, and keeps reading every older version it knows. Additive, defaulted fields (a new optional per-race flag, say) don't bump the version — old files load with the default, new files save the value. Removed fields don't either — the loader ignores unknown keys.
+
+A new field also bumps the version when its absence would read as a real value rather than as "not recorded". Then an old reader refuses the new file instead of silently dropping the field, and the version tells a new reader whether the field was ever written.
+
+- **Version 1** (tickets 05–30): everything above except Data Quality Warnings.
+- **Version 2** (ticket 39): adds the required per-race `data_quality_warnings` list. Before this, the warnings were printed in the summary but never written to the data file, so a reload lost them. A version-1 file loads with no warnings, because none were saved, not because its races had none: the committed `2026-10-26_first-openf1-run` lists them in its `.md` but not its `.json`. The loader exposes the file's version as `RunMetadata.format_version`, and the compare command says it can't compare warnings when either side is version 1, rather than naming every warned race on the other side.
+
+Rejected for version 2: saving the warnings as an optional field at version 1. This ADR's rule as first written allowed it, but an empty list would then mean both "this race had none" and "this file predates saved warnings". An older build would also silently drop warnings from a newer file. Recovering version-1 warnings from the `.md` summary was rejected as well: the data file is the source of truth, and the compare command doesn't parse markdown.

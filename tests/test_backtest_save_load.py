@@ -204,6 +204,107 @@ def test_estimated_pit_loss_flag_round_trips(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Data Quality Warnings (ticket 39)
+# ---------------------------------------------------------------------------
+
+_STINTS_WARNING = "Race /v1/stints: dropped 1 of 57 rows with empty lap_start/lap_end"
+_HISTORY_WARNING = (
+    "2023 Imola: no usable past-race samples "
+    "(fetch succeeded with no rows or no clean laps)"
+)
+_REPO_RESULTS = Path(__file__).resolve().parent.parent / "results" / "backtest"
+
+
+def _with_warnings(base: RaceWeekend, *warnings: str) -> RaceWeekend:
+    return replace(
+        base,
+        pre_race=replace(base.pre_race, data_quality_warnings=tuple(warnings)),
+    )
+
+
+def _warned_result(*, with_warnings: bool = True) -> BacktestResult:
+    # Alpha carries a target-weekend and a history warning (tickets 30 and
+    # 28, in the order the loader writes them); Beta carries none.
+    alpha = _one_scoreable_green(circuit="Alpha")
+    if with_warnings:
+        alpha = _with_warnings(alpha, _STINTS_WARNING, _HISTORY_WARNING)
+    weekends = {
+        (2024, "Alpha GP"): alpha,
+        (2024, "Beta GP"): _one_scoreable_green(circuit="Beta"),
+    }
+    return run_backtest(
+        [RaceSpec(2024, "Alpha GP"), RaceSpec(2024, "Beta GP")],
+        load=_make_loader(weekends),
+    )
+
+
+def _rewrite_as_version_1(path: Path) -> None:
+    """Make a saved file look like one written before ticket 39."""
+    data = json.loads(path.read_text())
+    data["format_version"] = 1
+    for race in data["races"]:
+        del race["data_quality_warnings"]
+    path.write_text(json.dumps(data, indent=2))
+
+
+def test_data_quality_warnings_read_back_identical(tmp_path):
+    result = _warned_result()
+    assert _STINTS_WARNING in format_backtest(result)
+
+    paths = save_backtest_result(result, tmp_path, metadata=_metadata())
+    reloaded, _ = load_backtest_result(paths.data)
+
+    assert reloaded.races == result.races
+    # The summary of a reloaded result is the one the run printed (ADR-0005).
+    assert format_backtest(reloaded) == format_backtest(result)
+
+
+def test_data_quality_warnings_are_saved_per_race_under_their_final_name(tmp_path):
+    # Ticket 34 renames the in-code field; the file already uses that name
+    # so the rename is not a second format change.
+    paths = save_backtest_result(_warned_result(), tmp_path, metadata=_metadata())
+    races = json.loads(paths.data.read_text())["races"]
+
+    assert races[0]["data_quality_warnings"] == [_STINTS_WARNING, _HISTORY_WARNING]
+    assert races[1]["data_quality_warnings"] == []
+    assert all("history_warnings" not in race for race in races)
+
+
+def test_a_version_1_file_loads_with_no_data_quality_warnings(tmp_path):
+    paths = save_backtest_result(_warned_result(), tmp_path, metadata=_metadata())
+    _rewrite_as_version_1(paths.data)
+
+    reloaded, reloaded_metadata = load_backtest_result(paths.data)
+
+    # Everything else reads back; the warnings a version-1 file never held
+    # read as none.
+    assert reloaded.races == _warned_result(with_warnings=False).races
+    assert "Data quality warnings" not in format_backtest(reloaded)
+    assert reloaded_metadata.format_version == 1
+
+
+def test_a_saved_file_records_its_format_version_on_the_metadata(tmp_path):
+    paths = save_backtest_result(_warned_result(), tmp_path, metadata=_metadata())
+
+    _, reloaded_metadata = load_backtest_result(paths.data)
+
+    assert reloaded_metadata.format_version == 2
+
+
+@pytest.mark.parametrize(
+    "path", sorted(_REPO_RESULTS.glob("*.json")), ids=lambda p: p.name
+)
+def test_committed_backtest_results_still_load(path):
+    data = json.loads(path.read_text())
+
+    reloaded, metadata = load_backtest_result(path)
+
+    assert metadata.format_version == data["format_version"]
+    assert len(reloaded.races) == len(data["races"])
+    assert len(reloaded.excluded) == len(data["excluded"])
+
+
+# ---------------------------------------------------------------------------
 # File layout and naming
 # ---------------------------------------------------------------------------
 
@@ -256,7 +357,7 @@ def test_metadata_records_label_run_time_code_version_and_seasons(tmp_path):
     paths = save_backtest_result(result, tmp_path, metadata=metadata)
     data = json.loads(paths.data.read_text())
 
-    assert data["format_version"] == 1
+    assert data["format_version"] == 2
     assert data["metadata"]["label"] == "tuning-pass-1"
     assert data["metadata"]["run_at"] == "2026-10-21T18:30:00+00:00"
     assert data["metadata"]["code_commit"] == "deadbeefcafe1234"
