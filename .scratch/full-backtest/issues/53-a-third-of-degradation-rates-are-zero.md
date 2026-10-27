@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Category:** enhancement
 
@@ -53,8 +53,242 @@ Found in ticket 24's analysis while checking ticket 15's early-Stop-Window theor
 This is an **investigation**, not a fix. Deliverable: a findings section in this ticket that, for each Degradation source (Long Runs, Push Laps, field average, Circuit History), identifies why rates come out at or below zero, across at least five circuits on both data sources, and says with evidence whether zero is a fitting artefact or genuinely low wear. Then **propose** fixes, each with its measured effect on the Tuning Seasons (the table above and Backtest scores, using a warm-cache run and the compare command, without saving a new baseline). Do not build the fixes into the main code: the maintainer chooses which to adopt, and each adopted fix becomes its own ticket. Exploratory code can live in a script under the ticket's notes or the scratchpad.
 
 Acceptance criteria (replace the ones above):
-- [ ] The cause of zero or negative rates is identified per Degradation source, across at least five circuits and both data sources, with evidence
-- [ ] Zero is classified per source as a fitting artefact or real low wear
-- [ ] Each candidate fix is described with its measured effect on the zero-rate table and on Tuning Seasons Backtest scores
-- [ ] Effects on tickets 52 and 54 (stop counts, edge Stop Windows) are reported for each candidate fix
-- [ ] No production code changes; new tickets are filed only for fixes the maintainer approves
+- [x] The cause of zero or negative rates is identified per Degradation source, across at least five circuits and both data sources, with evidence
+- [x] Zero is classified per source as a fitting artefact or real low wear
+- [x] Each candidate fix is described with its measured effect on the zero-rate table and on Tuning Seasons Backtest scores
+- [x] Effects on tickets 52 and 54 (stop counts, edge Stop Windows) are reported for each candidate fix
+- [x] No production code changes; new tickets are filed only for fixes the maintainer approves
+
+## Implementation notes
+
+**Status: done (2026-10-27).** This was an investigation, with no production code changes. The triage criteria (the second list) are met. The first list was replaced at triage, so it's left unticked. No implementation tickets are filed: the maintainer chooses which fixes to adopt (see Deviations).
+
+**Every decision and comparison below was judged on the Tuning Seasons (2022–2024) only. 2025 is reported alongside and was not used to rank anything.**
+
+### What was built
+
+- Scratch scripts in `.scratch/full-backtest/notes/53-zero-degradation/` (README there gives the run order). None is imported by `src/`.
+  - They read saved data only, and write their pickles and Backtest Results to `$T53_DATA`, outside the repo.
+  - `t53.py` is the harness: a parametrised copy of `degradation.team_degradation` patched into `predictor` in-process, as in ticket 51.
+- **Harness check.** With no knobs, the harness reproduces `2026-10-27_baseline-v3.json` exactly: `f1-strategy compare` shows +0.0 on every line. It also reproduces this ticket's table: 1,488 of 4,758 per-driver rates at zero.
+- Each candidate fix was saved as a full 2022–2025 offline Backtest Result outside the repo and compared with `uv run f1-strategy compare results/backtest/2026-10-27_baseline-v3.json <result>`. No new baseline was saved.
+- **An independent measure of real wear, for evaluation only.** For each weekend's own race, clean green-flag race laps were fitted with one least-squares model:
+  - `lap time = driver intercept + Compound offset − F × race lap + wear(Compound) × tyre age`
+  - `F` is the non-tyre lap-time trend: fuel burn plus race track evolution. It is identified across Stints, because fresh tyres late in the race are quicker than fresh tyres early.
+  - `wear(Compound)` is the **race-measured wear**.
+  - Seven races where `|F| > 0.2` (wet or red-flagged: 2022 Imola and Monaco, 2023 Australia, 2024 Canada and Qatar, 2025 Britain and Belgium) are left out of the wear comparisons.
+  - This is never a model input: it reads the race being predicted.
+
+### Findings: why rates come out at or below zero
+
+**The 0.03 s/lap fuel effect under-corrects; it doesn't over-correct.** The ticket's first suspect has the sign backwards.
+
+- The fuel effect is *added* to the fitted slope, so a larger effect raises rates.
+- Race data puts the real non-tyre trend at a median **F = 0.057 s/lap** (IQR 0.043–0.075 over 89 races). It is the same on both sources: 0.055 on FastF1 2022, 0.057 on OpenF1 2023–2025.
+- Within race Stints, the raw slope before any fuel correction has a median of +0.018 (Soft), +0.004 (Medium) and −0.007 (Hard) s/lap. After adding 0.03, 20 of 62, 28 of 88 and 25 of 87 race-Compound averages are still ≤ 0.
+- The joint model's race-measured wear is clearly positive: median 0.058 (Soft), 0.054 (Medium) and 0.047 (Hard) s/lap, with ≤ 0 in only 12/63, 8/88 and 7/87 races.
+
+**Per source** (baseline, team-level rates; 2022 is FastF1, 2023–2025 OpenF1):
+
+| Source | At or below zero | Race-measured wear where zero / where positive | Race wear ≤ 0.02 among the zeros | Main cause | Verdict |
+|---|---|---|---|---|---|
+| Long Runs | 258/1,248 | 0.040 / 0.056 | 41/222 (18%) | Noise in short fits; sprint Stints under-corrected | Mostly a fitting artefact; a minority is real low wear |
+| Push Laps | 245/465 | 0.037 / 0.047 | 52/198 (26%) | Push-Lap fall-off measures warm-up and track evolution, not wear | Method artefact |
+| Field average | 215/581 | 0.031 / 0.059 | 56/195 (29%) | Averages the raw fits above, including negative Push-Lap fits | Inherited artefact |
+| Circuit History | 30/90 (3 race-Compounds) | 0.055 / 0.130 | 0/20 | Fuel under-correction of race Stints, plus thin history (ticket 47) | Artefact |
+
+- **Long Runs, fitting noise.** Fits at or below zero fall steadily with lap count:
+  - on FastF1 2022: 44% under 6 laps, 27% at 6–9, 18% at 10–19, 9% at 20+
+  - on OpenF1: 41%, 29%, 18% and 19%
+  - the slope's standard error goes from about 0.13 s/lap under 6 laps to about 0.02 at 20+, against a signal of about 0.05
+  - by session: FP1 has 29–31% at or below zero (median 6 laps), FP2 17–19% (8–10 laps), FP3 33–41% (6–8 laps)
+  - track evolution in FP1 can't be separated from FP1's shorter runs
+  - FP2 needs essentially no extra correction: its median gap to race-measured wear is −0.02 to +0.01 s/lap.
+- **Long Runs, sprint Stints.** Sprint-race Stints are race-like. On OpenF1 they need a correction of about 0.043 s/lap, not 0.03, and 26–31% of them fit at or below zero. Austin 2023–2025 (sprint weekends) has 16 of 48 Long Run rates at zero, mostly from 15+ lap Stints. Qualifying sessions also produce a handful of nonsense "Long Runs" (14 fits, median slope −0.85 to −4.8 s/lap).
+- **Push Laps.** 4,292 Push-Lap groups have a single Push Lap and 2,915 have two or more.
+  - In the multi-lap groups, the last Push Lap is *faster* than the first in 74% (median −0.39 s over about 2.3 laps of tyre age); the first is fastest in only 22%.
+  - Fits at or below zero: 65% on FastF1 and 70% on OpenF1, with Hard 79–83% and Medium 66–76%. The implied correction would be about 0.19 s/lap.
+  - **Weighting bug:** `_fit_fuel_corrected_rate` counts single-lap groups in the lap count `n`, though they carry no slope information. That inflates Push Laps' weight in shrinkage and in the field average.
+- **Field average.**
+  - It is a mean of raw, unclamped fits (ticket 13), so the "field average pulled down by clamped zeros" suspect is ruled out.
+  - It *is* pulled down by negative raw fits: the shrink target is ≤ 0 for 268 of 1,248 Long Run rates and 159 of 465 Push Lap rates, and 31 positive Long Run fits were dragged to zero by it.
+  - Where the field average is zero, Push Laps make up a median 24% of its laps, against 17% where it's positive.
+- **Circuit History.** The three zero cases:
+  - 2024 Las Vegas Hard: −0.078; race-measured 0.066
+  - 2024 Melbourne Hard: −0.005; race-measured 0.044
+  - 2025 Shanghai Soft: −0.374 from thin history; that race ran no clean Soft
+  
+  A 0.057 history fuel effect fixes Melbourne and cuts the Circuit History zeros by a third (59 → 40 per driver). Las Vegas and Shanghai need ticket 47's minimum-history rule.
+- **Real low wear exists, but it's the minority.** Every source has some zeros where the race-measured wear was also ≤ 0.02 s/lap: Miami 2022 (all three Compounds), the 2022 Melbourne and Jeddah Hards, and the Baku and Las Vegas Hards. These are street or new-surface circuits where a near-zero rate is roughly right. Elsewhere, where a rate is clamped to zero the same race still wore that Compound at a median 0.03–0.04 s/lap.
+
+**Five-plus circuits on both data sources** (team-level rates at zero by source; race-measured wear as a median over the group's races):
+
+| Circuit | Data | Long Runs | Push Laps | Field avg | History | Median Long Run laps; ≤ 0 fits under 10 laps | Race-measured wear S / M / H | Race F |
+|---|---|---|---|---|---|---|---|---|
+| Baku | FastF1 2022 | 7/14 | 4/6 | 8/10 | – | 5; 8 of 10 | 0.091 / 0.087 / 0.031 | 0.074 |
+| Baku | OpenF1 2023–25 | 12/30 | 20/27 | 21/33 | – | 10; 4 of 7 | – / 0.033 / 0.022 | 0.075 |
+| Jeddah | FastF1 2022 | 6/18 | 4/5 | 5/7 | – | 10; 3 of 4 | – / 0.049 / 0.004 | 0.086 |
+| Jeddah | OpenF1 2023–25 | 17/53 | 12/23 | 2/14 | – | 9; 12 of 17 | 0.075 / 0.044 / 0.024 | 0.060 |
+| Melbourne | FastF1 2022 | 10/18 | 2/2 | 6/10 | – | 8; 6 of 9 | – / 0.030 / −0.006 | 0.059 |
+| Melbourne | OpenF1 2023–24 | 5/18 | 14/29 | 3/3 | 10/10 | 9; 5 of 7 | −0.035 / 0.062 / 0.044 | 0.053 |
+| Miami | FastF1 2022 | 2/11 | 6/6 | 6/10 | – | 5; 2 of 2 | −0.158 / −0.010 / −0.003 | 0.051 |
+| Miami | OpenF1 2023–24 | 3/25 | 16/23 | 6/12 | – | 14; 5 of 6 | 0.026 / 0.018 / 0.023 | 0.051 |
+| Monza | FastF1 2022 | 12/26 | 2/2 | 1/2 | – | 10; 7 of 13 | 0.038 / 0.034 / 0.049 | 0.051 |
+| Monza | OpenF1 2023–25 | 14/44 | 6/22 | 0/14 | 0/10 | 14; 8 of 20 | 0.015 / 0.039 / 0.050 | 0.062 |
+| Silverstone | FastF1 2022 | 7/14 | 4/5 | 9/11 | – | 6; 5 of 6 | 0.041 / 0.005 / 0.021 | 0.056 |
+| Silverstone | OpenF1 2023 | 4/25 | 4/4 | 0/1 | – | 9; 3 of 4 | 0.073 / 0.068 / 0.072 | 0.076 |
+| Zandvoort | FastF1 2022 | 8/22 | 2/3 | 1/5 | – | 11; 4 of 7 | 0.056 / 0.049 / 0.032 | 0.042 |
+| Zandvoort | OpenF1 2024–25 | 3/34 | 8/11 | 5/15 | – | 11; 2 of 4 | 0.054 / 0.033 / 0.031 | 0.040 |
+| Austin | FastF1 2022 | 1/14 | 0/1 | 0/15 | – | 6; 1 of 1 | – / 0.056 / 0.044 | 0.064 |
+| Austin | OpenF1 2023–25 | 16/48 | 6/13 | 14/29 | – | 16; 3 of 15 | 0.275 / 0.046 / 0.032 | 0.070 |
+
+The pattern holds on both sources. Short Long Runs and Push Laps produce the zeros, while the race wore the Compound at 0.02–0.09 s/lap. Miami 2022 is the clear real-low-wear exception. Austin on OpenF1 is the sprint-Stint case (long fits, still zero).
+
+### What zero Degradation does to the predictions (tickets 52 and 54)
+
+- **Zero Softs make Soft-ending 1-stops the favourite.** In the baseline Tuning Seasons, the top pick is H → S for 200 drivers and M → S for 138, of 1,008. Drivers almost never ran those. A Soft rate at zero, mostly from Push Laps or short runs, makes the Soft look free. The model has no Compound pace term (pre-race spec, Further Notes), so nothing else separates the Compounds. For reference, H → M is the top pick for 453; it ties with M → H, which is the actual Strategy for 250.
+- **Zero on one Compound pins Stop Windows to the race edge.** The simulator gives the zero-rate Compound every lap it can, which leaves the other Stint at `min_stint_length`. With two Compounds both near zero, every stop lap is within the 1 s margin, so the window spans the race ("lap 5–57"). Every fix that removes zeros removes the 20-lap-plus edge windows (87 of them in the Tuning Seasons), and turns them into interior windows that are hit on their merits.
+- **Zero Degradation is not the main cause of ticket 52.** Every fix below that raises the share of 2-stop top picks towards reality lowers Tuning top-3: higher fuel effect, no Push Laps, negative fits treated as missing. The fixes that raise top-3 leave the green top-pick stop split at about 271 / 96 / 1, against an actual 115 / 202 / 48 / 3+. Raising rates uniformly makes the model pick *wrong* 2-stops, mostly Hard-heavy ones. Ticket 52's remaining gap is more likely the missing Compound pace term and linear Degradation than zero rates.
+
+### Candidate fixes, measured
+
+Each fix was run as a full offline Backtest. The zero shares are per-driver rates, as in this ticket's table. Hits are Stop Window hits over all actual stops.
+
+**Before (baseline-v3), per driver, all seasons:** Long Runs 516/2,487 (21%), Push Laps 487/920 (53%), field average 426/1,153 (37%), Circuit History 59/179 (33%), next-softer bound 0/19, all 1,488/4,758 (31%). By group: Tuning Seasons 1,063/3,501 (30.4%), 2025 425/1,257 (33.8%).
+
+**Scores** (Tuning Seasons decide; 2025 is reported only):
+
+| Fix | Tuning rates at zero | Tuning top-1 | Tuning top-3 (Δ pp on the races both runs scored) | Tuning hits /1,931 | 2025 top-1 / top-3 / hits |
+|---|---|---|---|---|---|
+| Baseline-v3 | 30.4% | 10.88% | 26.35% | 219 | 12.88% / 29.48% / 74 |
+| **A. Compound ordering**: per team, Soft ≥ Medium ≥ Hard after shrinkage (an inverted pair is replaced by its mean) | 30.2% | 12.09% | 28.82% (+2.47) | 375 | 12.98% / 29.42% / 104 |
+| **B. Shrinkage 4 → 16 laps** (setting) | 28.5% | 12.10% | 28.87% (+2.52) | 218 | 13.24% / 28.72% / 80 |
+| B′. Shrinkage 4 → 8 laps | 29.3% | 11.41% | 27.11% (+0.76) | 229 | 13.38% / 29.62% / 72 |
+| **C. Rate floor 0.02 s/lap** instead of the clamp at 0 | 0% | 10.91% | 27.19% (+0.84) | 277 | 12.88% / 29.08% / 84 |
+| D. Qualifying sessions left out of Degradation | 30.0% | 11.08% | 26.67% (+0.32) | 222 | 12.79% / 29.21% / 75 |
+| E. Race-like fuel effect (0.057) for Circuit History and sprint Long Runs only | 28.7% | 10.90% | 26.30% (−0.05) | 220 | 13.29% / 29.89% / 73 |
+| E′. 0.057 for Circuit History only | 29.8% | 10.80% | 26.05% (−0.30) | 223 | 12.88% / 29.48% / 74 |
+| F. Fuel effect 0.045 for every source | 26.0% | 10.52% | 25.79% (−0.55) | 222 | 12.84% / 29.17% / 74 |
+| F′. Fuel effect 0.057 for every source | 24.0% | 9.90% | 24.10% (−2.25) | 219 | 12.97% / 29.48% / 73 |
+| F″. Fuel effect 0.07 for every source | 22.2% | 9.51% | 23.20% (−3.15) | 211 | 12.43% / 28.40% / 70 |
+| G. Push Laps not used* | 22.9% | 10.29% | 25.75% (−1.05) | 247/1,894 | 9.32% / 22.84% / 52 |
+| H. Own fit ≤ 0 treated as no data (field average instead)* | 3.5% | 7.52% | 18.84% (−8.46) | 265/1,836 | 9.68% / 21.80% / 69 |
+| I. Own fit needs at least 8 laps* | 26.4% | 9.32% | 23.16% (−3.08) | 273/1,886 | 9.41% / 24.53% / 40 |
+| A + B | 28.7% | 13.04% | 30.82% (+4.47) | 364 | 13.41% / 29.00% / 99 |
+| A + C | 0% | 12.03% | 29.32% (+2.97) | 451 | 12.94% / 28.78% / 117 |
+| A + C at 0.04 | 0% | 11.65% | 28.43% (+2.09) | 410 | 12.33% / 27.14% / 130 |
+| **A + B + C** | **0%** | **13.05%** | **31.41% (+5.06)** | **439** | 13.01% / 28.19% / 122 |
+| A + E | 29.4% | 12.14% | 28.90% (+2.55) | 390 | 13.18% / 29.62% / 108 |
+| A + B + E | 28.0% | 12.84% | 30.28% (+3.94) | 369 | 13.41% / 28.86% / 101 |
+| A + F′ | 24.7% | 11.34% | 27.07% (+0.72) | 366 | 12.49% / 28.15% / 97 |
+| A + G* | 23.2% | 11.61% | 28.15% (+1.35) | 412/1,894 | 9.21% / 21.46% / 84 |
+| A with ordering also on the field-level fallbacks | 31.1% | 11.81% | 28.26% (+1.91) | 357 | 13.08% / 29.72% / 105 |
+| G + F′* | 17.1% | 9.61% | 23.87% (−2.93) | 246/1,894 | 8.69% / 21.58% / 51 |
+| G + B′* | 22.1% | 10.47% | 26.60% (−0.20) | 264/1,894 | 9.23% / 23.20% / 55 |
+
+\* These change the scored set, because some races are refused for lack of any Soft estimate. G: 2024 Las Vegas (79 races). H: 2023 Austria and 2023 Austin (78). I: 2024 Austria (79). Their Δ is on the races both runs scored. All others score the same 80 races as the baseline.
+
+**Tickets 52 and 54**, Tuning Seasons. Green-race actual stops 1 / 2 / 3 / 4+: 115 / 202 / 48 / 3. Edge windows use ticket 54's definition: the window starts in the first 6 laps or ends in the last 6.
+
+| Fix | Green top pick 1 / 2 / 3 stops | Neutralised top pick 1 / 2 / 3 | Interior windows hit | Edge, under 20 laps, hit | Edge, 20+ laps, hit | Mean width (laps) |
+|---|---|---|---|---|---|---|
+| Baseline-v3 | 271 / 97 / 0 | 520 / 108 / 12 | 116/361 | 20/224 | 83/87 | 11.6 |
+| A | 250 / 113 / 5 | 499 / 108 / 33 | 233/564 | 21/160 | 121/130 | 13.4 |
+| B | 283 / 85 / 0 | 531 / 108 / 1 | 121/358 | 23/228 | 74/78 | 11.1 |
+| C | 271 / 97 / 0 | 514 / 114 / 12 | 257/685 | 20/153 | 0/0 | 9.4 |
+| D | 271 / 97 / 0 | 521 / 107 / 12 | 117/355 | 22/228 | 83/87 | 11.6 |
+| E | 263 / 105 / 0 | 507 / 114 / 19 | 119/374 | 20/220 | 81/85 | 11.2 |
+| F′ | 224 / 142 / 2 | 468 / 134 / 38 | 146/442 | 26/210 | 47/50 | 9.2 |
+| G* | 182 / 154 / 14 | 492 / 125 / 23 | 179/534 | 21/232 | 47/49 | 9.0 |
+| H* | 76 / 232 / 43 | 271 / 296 / 54 | 246/814 | 11/81 | 8/9 | 7.3 |
+| I* | 200 / 144 / 24 | 488 / 105 / 27 | 181/505 | 31/208 | 61/66 | 10.3 |
+| A + B | 271 / 96 / 1 | 492 / 124 / 24 | 231/559 | 23/168 | 110/116 | 12.8 |
+| A + C | 250 / 113 / 5 | 493 / 114 / 33 | 429/933 | 22/122 | 0/0 | 10.0 |
+| A + B + C | 271 / 96 / 1 | 492 / 124 / 24 | 422/932 | 17/102 | 0/0 | 10.2 |
+| A + B + E | 252 / 115 / 1 | 474 / 143 / 23 | 240/588 | 21/166 | 108/114 | 12.5 |
+
+2025, A + B + C: green top pick 58 / 54 / 1 against actual 89 / 23 / 1 / 0; windows interior 117/243, edge under 20 laps 5/35, edge 20+ laps 0/0, mean width 10.3 laps. Baseline-v3 2025: green 80 / 33 / 0; interior 25/66, edge under 20 laps 1/75, edge 20+ laps 48/51, width 15.4 laps.
+
+**After, per driver, all seasons, for the leading candidates:**
+
+| Fix | Long Runs | Push Laps | Field avg | Circuit History | All |
+|---|---|---|---|---|---|
+| A | 578/2,487 (23%) | 423/920 (46%) | 452/1,153 (39%) | 39/179 (22%) | 1,492/4,758 (31%) |
+| B | 494/2,487 (20%) | 399/920 (43%) | 426/1,153 (37%) | 59/179 (33%) | 1,378/4,758 (29%) |
+| C, A + C, A + B + C | 0 | 0 | 0 | 0 | 0/4,758 |
+| A + B | 534/2,487 (21%) | 371/920 (40%) | 450/1,153 (39%) | 39/179 (22%) | 1,394/4,758 (29%) |
+| E | 488/2,487 (20%) | 487/920 (53%) | 408/1,153 (35%) | 40/179 (22%) | 1,423/4,758 (30%) |
+| F′ | 400/2,487 (16%) | 425/920 (46%) | 338/1,153 (29%) | 40/179 (22%) | 1,203/4,758 (25%) |
+
+### Ranking and recommendation
+
+The ranking is by Tuning top-3, the measure ticket 51 used, with Stop Window hits second. Each fix stands alone and could be its own ticket.
+
+1. **A. Compound ordering. Adopt.**
+   - Tuning: +2.47 pp top-3, +1.21 pp top-1, Stop Window hits 219 → 375. 2025 is flat on top-3 (−0.06 pp) with hits 74 → 104.
+   - It's a modelling fix with a principle already in ADR-0003 ("a harder Compound wears no faster"). It goes through `predict()` tests, and it has no setting to tune.
+   - It works on the wrong *ordering*, not the zero count. It removes the zero-Soft 1-stops: H → S and M → S top picks fall from 338 to 11.
+   - It doesn't remove zero Hards, which are consistent with the ordering.
+2. **B. More shrinkage (a setting).**
+   - Tuning: +2.52 pp alone and +2.0 pp more on top of A. Hits don't move on their own.
+   - 16 is one point of a coarse sweep (4, 8, 16), not a tuned value. Tune it on the Tuning Seasons after A lands, because the two interact.
+3. **C. A small positive floor instead of the clamp at zero (a rule plus a setting).**
+   - It removes every zero and every 20-lap-plus edge window (87 → 0).
+   - Hits rise on interior windows: Tuning 219 → 277 alone, 375 → 451 with A.
+   - Top-3: +0.84 pp alone, +0.5 pp on top of A.
+   - 0.02 beat 0.04 on the Tuning Seasons. Tune the value with B.
+   - It treats the symptom: the zero is still a wrong estimate, just no longer a degenerate one. It should come after A, and preferably after the Push Laps question is settled.
+4. **D. Qualifying out of Degradation.** +0.32 pp: small, but there's no reason to fit Degradation on qualifying laps. A tidy-up worth folding into another ticket.
+5. **E. Race-like fuel effect for race and sprint Stints.** Physically right: race and sprint Stints need about 0.057, not 0.03. But it is score-neutral (−0.05 pp alone, +0.08 on top of A, −0.54 on top of A + B). Don't adopt for score. Revisit once a Compound pace term exists.
+
+**Rejected on Tuning evidence:**
+
+- F, a higher fuel effect for every source (−0.55 to −3.15 pp)
+- G, dropping Push Laps (−1.05 pp on common races, and it makes 2024 Las Vegas unpredictable)
+- H, treating negative fits as missing (−8.46 pp). Dropping only the negative noise biases the mean upwards, and the model then picks Hard-heavy 2-stops.
+- I, an 8-lap minimum (−3.08 pp)
+
+The Push Lap finding still stands: Push Laps measure warm-up, not wear. They help today only because they fill gaps that the alternatives fill worse. Replacing them needs a better fallback, not just their removal.
+
+**What I'd adopt: A now, then B and C tuned together on the Tuning Seasons.**
+
+- A + B + C reached 31.41% Tuning top-3 (+5.06 pp), 13.05% top-1, 439 hits, and no zero or edge-spanning windows.
+- Held-out 2025: −1.3 pp top-3 (29.48% → 28.19%) and +48 hits. That top-3 dip is reported, not used. It's a reason to tune B and C carefully rather than fix them at 16 and 0.02.
+- None of these closes ticket 52's stop-count gap (green top pick stays about 74% 1-stop). Re-triage 52 on the Compound pace term and non-linear Degradation, not on zero rates.
+
+### Decisions and alternatives rejected
+
+- *An in-process harness, not a CLI run per variant.* Weekends were loaded once through the offline router and pickled, and `predictor.team_degradation` was patched per variant, as in ticket 51. The harness reproduced baseline-v3 exactly, and each variant's saved result went through the real `compare` command. Rejected: adding knobs to `src/` for the investigation, which the ticket forbids.
+- *Race-measured wear as the reference for "real or artefact".* A practice zero can only be called wrong against an independent measure of what the tyre did. The race the prediction is for is the most direct one. It's used only to classify, never as an input or to choose a fix. Rejected: comparing against Circuit History, which shares the fuel under-correction under test.
+- *Ranking by Tuning top-3, hits second.* This matches ticket 51's decision rule. Stop counts and edge windows are reported as effects on 52 and 54, not used to rank, because a fix can move stop counts towards reality while matching fewer actual Strategies (H, F′).
+- *Combinations measured as well as single fixes.* The fixes interact (A + C hits 451 against A's 375 and C's 277), so the order of adoption matters.
+
+### Deviations from the ticket and spec
+
+- **Follow-up tickets filed only on approval**, although CLAUDE.md asks for follow-up work as new tickets. The user asked for none to be filed until the maintainer chose. Tickets 62 (fix A) and 63 (B + C) were filed after that choice; the other follow-ups below remain unfiled.
+- The first list of criteria was replaced at triage and is left unticked. Its third item ("fixes go through `predict()` tests") is for the implementation tickets.
+- The edge-window "before" figures are from baseline-v3 (after tickets 50 and 58), not the earlier baseline in ticket 54's table, so they differ slightly from that table: all seasons interior 141/427, edge under 20 laps 21/299, edge 20+ laps 131/138.
+- No spec change (no decision was made). No `CONTEXT.md` change: no domain term was introduced or sharpened. "Race-measured wear" is an evaluation device in this ticket, not a domain term. No ADR: nothing was decided. Adopting A would extend ADR-0003's harder-wears-no-faster assumption from the fallback chain to every team rate, which deserves an ADR amendment in its ticket.
+
+### Open questions, limitations and follow-ups
+
+The maintainer approved A, B and C on 2026-10-27. Those are filed; the rest stay unfiled until chosen.
+
+- **Fix A** (Compound ordering per team), with `predict()` tests and an ADR-0003 amendment: filed as ticket 62.
+- **Tune B and C together** on the Tuning Seasons after A: filed as ticket 63.
+- **Push Lap lap count**: single-Push-Lap groups add to `n` without adding information. It's a small bug whatever is decided about Push Laps.
+- **Qualifying sessions** shouldn't feed Degradation (D).
+- **Fuel effect per source**: race and sprint Stints measure about 0.057 s/lap. Revisit with a Compound pace term.
+- **Ticket 47**: Las Vegas 2024 Hard and Shanghai 2025 Soft are its cases.
+- **Ticket 52**: re-triage on the Compound pace term (spec Further Notes) and non-linear Degradation. Zero Degradation explains the Soft-ending 1-stops, not the missing 2-stops.
+- **Ticket 54**: zero or near-zero rates are confirmed as the cause of the 20-lap-plus edge windows. A floor (C) removes them all.
+- Limitations:
+  - The race-measured wear assumes linear wear and a shared driver pace across Compounds.
+  - The sweeps are coarse (shrinkage 4/8/16, floor 0.02/0.04, fuel 0.045/0.057/0.07).
+  - Results come from one run of a deterministic model. With about 1,000 Tuning drivers, 1 pp of top-3 is about 10 drivers' credit.
+
+### Review feedback to the user
+
+- The ticket's framing pointed at fuel over-correction. The data says the opposite: under-correction. Even so, the fuel effect is *not* the lever for scores. Raising it removes zeros but makes predictions worse. Zero rates hurt mainly through *which* Compound looks free (the Soft) and where windows land, not through how many stops the model picks.
+- The biggest, cheapest win is a modelling rule the project already believes (harder wears no faster), applied per team rather than only in the fallback chain.
+- Treat the A + B + C combined number as an upper bound from a coarse sweep. Its small 2025 top-3 dip is a reason to tune B and C on the Tuning Seasons properly, not to skip them.
