@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from .degradation import DegradationSource
+from .fastf1_errors import FastF1FetchError
 from .openf1_client import OpenF1FetchError
 from .predictor import NotDryRaceError, predict
 from .rate_limit import WAIT_SECONDS_DEFAULT, RateLimitWait, default_wait
@@ -248,6 +249,20 @@ def run_backtest(
                     event=spec.event,
                     reason=ExclusionReason.FETCH_FAILED,
                     detail=f"FastF1 rate limit still raised after retrying: {error}",
+                )
+            )
+            continue
+        except FastF1FetchError as error:
+            # A FastF1 network error on the race, a pre-race session or a
+            # past race it reads (ticket 40). FastF1 has no retry of its
+            # own, but a re-run on the warm cache picks up where this one
+            # stopped, so it is recorded the same way as an OpenF1 one.
+            excluded.append(
+                ExcludedRace(
+                    season=spec.season,
+                    event=spec.event,
+                    reason=ExclusionReason.FETCH_FAILED,
+                    detail=f"FastF1 fetch failed: {error}",
                 )
             )
             continue

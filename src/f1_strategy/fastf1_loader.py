@@ -17,6 +17,7 @@ import pandas as pd
 from fastf1.exceptions import FastF1CriticalError
 
 from .backtest import RaceSpec
+from .fastf1_errors import missing_data_reason, watch_fastf1
 from .location_aliases import location_group
 from .openf1_loader import PastRaceSamples
 from .pit_lane_table import estimated_pit_loss, pit_lane_entry
@@ -92,19 +93,23 @@ def load_weekend(
     cache_dir.mkdir(parents=True, exist_ok=True)
     fastf1.Cache.enable_cache(str(cache_dir))
 
-    race = fastf1.get_session(season, event, "R")
-    race.load(laps=True, telemetry=False, weather=False, messages=False)
+    race, reason = _load_session(season, event, "R", f"{season} {event} race")
+    if race is None:
+        raise ValueError(f"{season} {event}: the race has no lap data ({reason})")
 
     event_meta = race.event
     circuit = str(event_meta["Location"])
     is_sprint = str(event_meta["EventFormat"]) != "conventional"
     teams = _starters_and_teams(race)
 
-    sessions = tuple(
+    loaded = [
         _load_pre_race_session(season, event, event_meta, i, drivers=set(teams))
         for i in range(1, 5)
-    )
-    sessions = tuple(s for s in sessions if s is not None)
+    ]
+    sessions = tuple(session for session, _ in loaded if session is not None)
+    # Ticket 40: the weekend's own warnings first, then the history scan's,
+    # the same order the OpenF1 loader uses.
+    session_warnings = tuple(warning for _, warning in loaded if warning)
 
     stints = _race_stints(race, drivers=set(teams))
     neutralisations = _neutralisation_periods(race)
@@ -115,6 +120,7 @@ def load_weekend(
         pit_loss_seasons,
         estimated_pit_loss,
         historical_degradation,
+        history_warnings,
     ) = _measure_pit_loss_and_history(
         circuit=circuit,
         race_season=season,
@@ -137,6 +143,7 @@ def load_weekend(
             pit_loss_seasons=pit_loss_seasons,
             estimated_pit_loss=estimated_pit_loss,
             historical_degradation=historical_degradation,
+            data_quality_warnings=session_warnings + tuple(history_warnings),
         ),
         race=RaceOutcome(
             stints=stints,
@@ -189,19 +196,67 @@ def _load_pre_race_session(
     event_meta,
     index: int,
     drivers: set[str],
-) -> Session | None:
+) -> tuple[Session | None, str | None]:
+    """One practice, sprint or qualifying session, and a Data Quality
+    Warning when it couldn't be loaded.
+
+    A rate limit or network error raises (ticket 40): the weekend is never
+    returned without a session it could have had. A session FastF1 has no
+    data for is left out, with a warning that says why.
+    """
     long_name = str(event_meta[f"Session{index}"])
     if long_name in ("", "None", "Race"):
-        return None
+        return None, None
     short_name = _SESSION_SHORT_NAME.get(long_name, long_name)
-    try:
-        session = fastf1.get_session(season, event, short_name)
-        session.load(laps=True, telemetry=False, weather=False, messages=False)
-    except Exception:
-        return None
+    session, reason = _load_session(
+        season, event, short_name, f"{season} {event} {short_name}"
+    )
+    if session is None:
+        return None, f"{short_name}: not loaded ({reason})"
 
     laps = tuple(_laps_from(session, short_name, drivers))
-    return Session(name=short_name, laps=laps)
+    return Session(name=short_name, laps=laps), None
+
+
+def _load_session(season: int, event, kind: str, what: str):
+    """Load one FastF1 session's laps: ``(session, None)``, or ``(None,
+    reason)`` when FastF1 has no lap data for it.
+
+    ``FastF1CriticalError`` (the rate limit) propagates to the Backtest's
+    wait-and-retry (ticket 17), and a network error raises
+    :class:`.fastf1_errors.FastF1FetchError` (ticket 40). FastF1's ``load``
+    logs and swallows both of those failures, and refusals, so the cause is
+    read from what it logged; ``what`` names the session in messages.
+    """
+    with watch_fastf1() as problems:
+        try:
+            session = fastf1.get_session(season, event, kind)
+            session.load(laps=True, telemetry=False, weather=False, messages=False)
+        except FastF1CriticalError:
+            raise
+        except Exception as error:
+            return None, missing_data_reason(what, season, problems, raised=error)
+    if hasattr(session, "_laps"):
+        return session, None
+    return None, missing_data_reason(what, season, problems)
+
+
+def _schedule(season: int):
+    """FastF1's event schedule for a past season: ``(schedule, None)``, or
+    ``(None, reason)``. Same error rules as :func:`_load_session`; FastF1
+    raises a bare ``ValueError`` once every schedule backend has failed, and
+    the logged causes say whether that was the network."""
+    with watch_fastf1() as problems:
+        try:
+            # Testing events are never races; asking for their "R" session
+            # only produces an error (2020's two Barcelona tests, round 0).
+            return fastf1.get_event_schedule(season, include_testing=False), None
+        except FastF1CriticalError:
+            raise
+        except Exception as error:
+            return None, missing_data_reason(
+                f"FastF1 {season} schedule", season, problems, raised=error
+            )
 
 
 def _laps_from(session, session_name: str, drivers: set[str]) -> Iterable[Lap]:
@@ -326,7 +381,13 @@ def _measure_pit_loss_and_history(
     cache_dir: str | Path,
     fuel_effect_s_per_lap: float,
     history_min_stint_length: int,
-) -> tuple[float, tuple[int, ...], bool, dict[Compound, HistoricalDegradation]]:
+) -> tuple[
+    float,
+    tuple[int, ...],
+    bool,
+    dict[Compound, HistoricalDegradation],
+    tuple[str, ...],
+]:
     """Measure Pit Loss and Historical Degradation from past races.
 
     When ``pit_loss_min_season`` is ``None``, the ADR-0004 Pit Loss exception
@@ -345,13 +406,14 @@ def _measure_pit_loss_and_history(
     pit-lane-table fallback (ADR-0004's main rule).
 
     Returns ``(pit_loss, pit_loss_seasons, estimated_pit_loss,
-    historical_degradation)``. ``pit_loss_seasons`` is empty when the
-    estimate was used.
+    historical_degradation, warnings)``. ``pit_loss_seasons`` is empty when
+    the estimate was used. ``warnings`` are the Data Quality Warnings of
+    the past-race scans that ran (ticket 40).
     """
     primary_min = (
         pit_loss_min_season if pit_loss_min_season is not None else history_min_season
     )
-    pit_loss, pit_seasons, historical_degradation = _past_races_at_circuit(
+    pit_loss, pit_seasons, historical_degradation, warnings = _past_races_at_circuit(
         circuit=circuit,
         race_season=race_season,
         min_season=min(primary_min, history_min_season),
@@ -363,14 +425,14 @@ def _measure_pit_loss_and_history(
         pit_loss_required=pit_loss_min_season is not None,
     )
     if pit_loss is not None:
-        return pit_loss, pit_seasons, False, historical_degradation
+        return pit_loss, pit_seasons, False, historical_degradation, warnings
 
     # Pit Loss fell through same-era: try pre-era seasons, keeping the
     # same-era Historical Degradation (ADR-0004 exception is Pit Loss only).
     pre_era_min = PIT_LOSS_PRE_ERA_MIN_SEASON
     pre_era_max = history_min_season  # exclusive upper bound
     if pre_era_min < pre_era_max:
-        fallback_pit_loss, fallback_seasons, _ = _past_races_at_circuit(
+        fallback_pit_loss, fallback_seasons, _, fallback_warnings = _past_races_at_circuit(
             circuit=circuit,
             race_season=race_season,
             min_season=pre_era_min,
@@ -384,12 +446,14 @@ def _measure_pit_loss_and_history(
             history_min_season=pre_era_max,
             pit_loss_required=False,
         )
+        warnings = warnings + fallback_warnings
         if fallback_pit_loss is not None:
             return (
                 fallback_pit_loss,
                 fallback_seasons,
                 False,
                 historical_degradation,
+                warnings,
             )
 
     # Last fallback: estimate from the hand-maintained pit lane table
@@ -403,6 +467,7 @@ def _measure_pit_loss_and_history(
             (),
             True,
             historical_degradation,
+            warnings,
         )
 
     raise ValueError(
@@ -422,7 +487,12 @@ def _past_races_at_circuit(
     pit_loss_min_season: int,
     history_min_season: int,
     pit_loss_required: bool = True,
-) -> tuple[float | None, tuple[int, ...], dict[Compound, HistoricalDegradation]]:
+) -> tuple[
+    float | None,
+    tuple[int, ...],
+    dict[Compound, HistoricalDegradation],
+    tuple[str, ...],
+]:
     """Load each previous season's race at the circuit once and read both the
     Pit Loss sample and the historical Degradation sample from it.
 
@@ -449,32 +519,27 @@ def _past_races_at_circuit(
     hist_samples: dict[Compound, list[tuple[float, int, float, int]]] = {
         c: [] for c in DRY_COMPOUNDS
     }
+    # Ticket 40: one Data Quality Warning per past season whose race gave
+    # no samples, worded like the router's (``data.measure_pit_loss_and_history``).
+    warnings: list[str] = []
+    aliases = "/".join(sorted(circuit_group))
     for season in range(min_season, race_season):
-        try:
-            schedule = fastf1.get_event_schedule(season)
-        except FastF1CriticalError:
-            # FastF1's rate limit (and any other critical FastF1 error) must
-            # propagate so the Backtest can wait and retry instead of
-            # silently treating this past season as "no history" — the bug
-            # that excluded 2022 Australia / Canada in the first baseline
-            # attempt (ticket 17).
-            raise
-        except Exception:
+        # The rate limit propagates from both loads (ticket 17), and a network
+        # error raises FastF1FetchError (ticket 40), so neither can pass for
+        # "this past season has no history".
+        schedule, reason = _schedule(season)
+        if schedule is None:
+            warnings.append(f"{season} {aliases}: no usable past-race samples ({reason})")
             continue
         matches = schedule[schedule["Location"].isin(circuit_group)]
+        reasons: list[str] = []
+        contributed = False
         for _, row in matches.iterrows():
-            try:
-                past = fastf1.get_session(season, int(row["RoundNumber"]), "R")
-                past.load(laps=True, telemetry=False, weather=False, messages=False)
-                if not hasattr(past, "_laps"):
-                    # FastF1's `load` logs and continues when the live-timing
-                    # API refuses the data (e.g. older seasons behind a 403).
-                    continue
-            except FastF1CriticalError:
-                # Same rule as above: a rate-limit hit on a past race must
-                # not look like "this past race genuinely has no data".
-                raise
-            except Exception:
+            round_number = int(row["RoundNumber"])
+            what = f"FastF1 {season} round {round_number}"
+            past, reason = _load_session(season, round_number, "R", what)
+            if past is None:
+                reasons.append(f"{what}: {reason}")
                 continue
             weight = 0.5 ** (race_season - season - 1)
             if season >= pit_loss_min_season:
@@ -485,11 +550,18 @@ def _past_races_at_circuit(
                 if losses:
                     losses.sort()
                     pit_weighted.append((losses[len(losses) // 2], weight, season))
+                    contributed = True
             if season >= history_min_season:
                 for compound, rate, n in _historical_stint_rates(
                     past, fuel_effect_s_per_lap, history_min_stint_length
                 ):
                     hist_samples[compound].append((rate, n, weight, season))
+                    contributed = True
+        if not contributed and not matches.empty:
+            warnings.append(
+                f"{season} {aliases}: no usable past-race samples "
+                f"({'; '.join(reasons) or 'FastF1 loaded it, but it gave no clean laps'})"
+            )
 
     if not pit_weighted:
         if pit_loss_required:
@@ -521,7 +593,7 @@ def _past_races_at_circuit(
             seasons=seasons_used,
             stint_count=len(samples),
         )
-    return pit_loss, pit_loss_seasons, historical_degradation
+    return pit_loss, pit_loss_seasons, historical_degradation, tuple(warnings)
 
 
 def _historical_stint_rates(
@@ -636,43 +708,34 @@ def load_past_race_samples(
     :func:`_pit_losses_in` and :func:`_historical_stint_rates` helpers.
 
     Returns empty ``PastRaceSamples`` when the schedule has no matching
-    row, when FastF1 refuses the laps for a past race (older seasons
-    behind the live-timing archive 401), or when any non-rate-limit
-    error prevents the load. :class:`fastf1.exceptions.FastF1CriticalError`
-    is **not** swallowed — it propagates so the Backtest's rate-limit
-    wait/retry logic (ticket 17) still fires.
+    row, and empty samples with a ``note`` saying why when FastF1 has no
+    data for the race or its season's schedule (e.g. 2018–2020 behind the
+    archive's 401, ADR-0006). The rate limit
+    (:class:`fastf1.exceptions.FastF1CriticalError`) propagates so the
+    Backtest waits and retries (ticket 17), and a network error raises
+    :class:`.fastf1_errors.FastF1FetchError` (ticket 40).
     """
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
     fastf1.Cache.enable_cache(str(cache_dir))
-    try:
-        schedule = fastf1.get_event_schedule(season)
-    except FastF1CriticalError:
-        raise
-    except Exception:
-        return PastRaceSamples(pit_losses=(), stint_rates=())
+    schedule, reason = _schedule(season)
+    if schedule is None:
+        return PastRaceSamples(pit_losses=(), stint_rates=(), note=reason)
     needle = str(event).strip().lower()
-    try:
-        matches = schedule[
-            (schedule["Location"].astype(str).str.lower() == needle)
-            | (schedule["EventName"].astype(str).str.lower() == needle)
-        ]
-    except Exception:
-        return PastRaceSamples(pit_losses=(), stint_rates=())
+    matches = schedule[
+        (schedule["Location"].astype(str).str.lower() == needle)
+        | (schedule["EventName"].astype(str).str.lower() == needle)
+    ]
     if matches.empty:
         return PastRaceSamples(pit_losses=(), stint_rates=())
-    row = matches.iloc[0]
-    try:
-        race = fastf1.get_session(season, int(row["RoundNumber"]), "R")
-        race.load(laps=True, telemetry=False, weather=False, messages=False)
-        if not hasattr(race, "_laps"):
-            # FastF1 logs and continues when the live-timing archive refuses
-            # (older seasons behind the mid-October 2026 401).
-            return PastRaceSamples(pit_losses=(), stint_rates=())
-    except FastF1CriticalError:
-        raise
-    except Exception:
-        return PastRaceSamples(pit_losses=(), stint_rates=())
+    round_number = int(matches.iloc[0]["RoundNumber"])
+    what = f"FastF1 {season} round {round_number}"
+    race_id = f"fastf1 {season} round {round_number}"
+    race, reason = _load_session(season, round_number, "R", what)
+    if race is None:
+        return PastRaceSamples(
+            pit_losses=(), stint_rates=(), race_id=race_id, note=f"{what}: {reason}"
+        )
     try:
         losses = tuple(_pit_losses_in(race))
     except Exception:
@@ -685,11 +748,7 @@ def load_past_race_samples(
         )
     except Exception:
         rates = ()
-    return PastRaceSamples(
-        pit_losses=losses,
-        stint_rates=rates,
-        race_id=f"fastf1 {season} round {int(row['RoundNumber'])}",
-    )
+    return PastRaceSamples(pit_losses=losses, stint_rates=rates, race_id=race_id)
 
 
 # Back-compat alias: tests from ticket 07 pin the old function name.
@@ -699,7 +758,7 @@ def _pit_loss_at_circuit(
     min_season: int,
     cache_dir: str | Path,
 ) -> float:
-    pit_loss, _, _ = _past_races_at_circuit(
+    pit_loss, _, _, _ = _past_races_at_circuit(
         circuit=circuit,
         race_season=race_season,
         min_season=min_season,

@@ -42,6 +42,10 @@ class _FakeSchedule:
         for i, row in enumerate(self._rows):
             yield i, row
 
+    @property
+    def empty(self) -> bool:
+        return not self._rows
+
 
 class _FakeLocationColumn:
     def __init__(self, rows):
@@ -61,7 +65,7 @@ def test_rate_limit_from_past_schedule_propagates(monkeypatch, tmp_path):
     """A `RateLimitExceededError` from `fastf1.get_event_schedule` while
     scanning past seasons must propagate, not be swallowed."""
 
-    def boom_schedule(season):
+    def boom_schedule(season, **_kwargs):
         raise RateLimitExceededError("any API: 500 calls/h")
 
     monkeypatch.setattr(fastf1_loader.fastf1, "get_event_schedule", boom_schedule)
@@ -86,7 +90,7 @@ def test_rate_limit_from_past_race_load_propagates(monkeypatch, tmp_path):
     data' — which is what caused 2022 Australia and Canada to drop out of
     the first baseline attempt."""
 
-    def fake_schedule(season):
+    def fake_schedule(season, **_kwargs):
         return _FakeSchedule(
             [{"Location": "Melbourne", "RoundNumber": 1}]
         )
@@ -116,12 +120,12 @@ def test_rate_limit_from_past_race_load_propagates(monkeypatch, tmp_path):
 
 
 def test_non_critical_exceptions_still_swallowed(monkeypatch, tmp_path):
-    """A plain `ValueError` or `ConnectionError` from a past race load is
-    still treated as 'no data for that race' — only `FastF1CriticalError`
-    propagates, so the loader keeps its existing behaviour for ordinary
-    missing-data cases."""
+    """A plain `ValueError` from a past race load is still treated as 'no
+    data for that race', now with a Data Quality Warning naming the error
+    (ticket 40). A network error no longer is: ticket 40's
+    ``tests/test_fastf1_fetch_errors.py`` pins that it raises."""
 
-    def fake_schedule(season):
+    def fake_schedule(season, **_kwargs):
         return _FakeSchedule(
             [{"Location": "Melbourne", "RoundNumber": 1}]
         )
@@ -136,7 +140,7 @@ def test_non_critical_exceptions_still_swallowed(monkeypatch, tmp_path):
     monkeypatch.setattr(fastf1_loader.fastf1, "get_event_schedule", fake_schedule)
     monkeypatch.setattr(fastf1_loader.fastf1, "get_session", fake_get_session)
 
-    pit, seasons, hist = fastf1_loader._past_races_at_circuit(
+    pit, seasons, hist, warnings = fastf1_loader._past_races_at_circuit(
         circuit="Melbourne",
         race_season=2022,
         min_season=2018,
@@ -150,3 +154,5 @@ def test_non_critical_exceptions_still_swallowed(monkeypatch, tmp_path):
     assert pit is None
     assert seasons == ()
     assert hist == {}
+    assert len(warnings) == 4  # 2018–2021, one per season
+    assert "ValueError: some non-critical FastF1 problem" in warnings[0]

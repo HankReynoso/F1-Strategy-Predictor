@@ -922,11 +922,17 @@ class PastRaceSamples:
     name (ticket 16), so it counts each race once per season by this
     identity rather than by the name it asked for (ticket 38). ``None``
     when no race was found.
+
+    ``note`` says why a race the source found gave no samples, when the
+    source knows (ticket 40), e.g. the F1 live-timing archive returned no
+    data for it. The scan puts it in the Data Quality Warning instead of
+    the generic "fetch succeeded with no rows" text.
     """
 
     pit_losses: tuple[float, ...]
     stint_rates: tuple[tuple[Compound, float, int], ...]
     race_id: str | None = None
+    note: str | None = None
 
 
 def _pit_losses_in(

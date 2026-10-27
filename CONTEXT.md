@@ -117,7 +117,7 @@ How strategy choices shift with a driver's circumstances, such as starting posit
 Running Strategy Predictions on past races and scoring them against the Strategies drivers actually ran.
 
 **Excluded Race**:
-A race weekend in a Backtest's scope that produced no scores, because it was refused (not a Dry Race), failed, its data couldn't be loaded, or its data couldn't be fetched (FastF1's rate limit or a network error that persisted after retrying). Every Excluded Race is listed with its reason, and a fetch failure is distinct from a genuine data-unavailable failure.
+A race weekend in a Backtest's scope that produced no scores, because it was refused (not a Dry Race), failed, its data couldn't be loaded, or its data couldn't be fetched (FastF1's rate limit still hit after waiting, or a network error on the race, a session or a past race it reads). Every Excluded Race is listed with its reason, and a fetch failure is distinct from a genuine data-unavailable failure.
 _Avoid_: skipped race, failed race
 
 **Cancelled Race**:
@@ -125,7 +125,7 @@ A round on the calendar that was called off and never took place (2023 Emilia Ro
 _Avoid_: skipped race, missing race
 
 **Data Quality Warning**:
-A note on a scored race in a Backtest Result saying where its data was incomplete and what was done about it: a past season at the circuit that gave no usable samples, or source rows dropped because a field was empty. The race is still scored; a race whose data can't be used at all is an Excluded Race instead.
+A note on a scored race in a Backtest Result saying where its data was incomplete, why, and what was done about it: a practice, sprint or qualifying session that couldn't be loaded, a past season at the circuit that gave no usable samples (such as 2018–2020, which the timing archive refuses), or source rows dropped because a field was empty. The race is still scored; a race whose data can't be used at all, or couldn't be fetched, is an Excluded Race instead.
 _Avoid_: history warning (it covers more than history), data error
 
 **Held-out Season**:

@@ -214,6 +214,7 @@ def measure_pit_loss_and_history(
         pit_contributed = False
         hist_contributed = False
         counted: set[str] = set()
+        notes: list[str] = []
         for alias in circuit_aliases:
             samples = _fetch_past_samples(
                 season=season,
@@ -226,6 +227,8 @@ def measure_pit_loss_and_history(
                 openf1_load_past_race_samples=openf1_load_past_race_samples,
             )
             if not samples.pit_losses and not samples.stint_rates:
+                if samples.note:
+                    notes.append(samples.note)
                 continue
             # Ticket 38: two alias names can reach the same race; count it
             # once, by the source's own race identity.
@@ -246,9 +249,13 @@ def measure_pit_loss_and_history(
                 )
                 hist_contributed = True
         if not pit_contributed and not hist_contributed:
+            # Ticket 40: say why when the source knows (e.g. FastF1's archive
+            # had no data for the race); the generic text is only true when
+            # the fetch really did succeed.
+            reason = "; ".join(notes) or "fetch succeeded with no rows or no clean laps"
             warnings.append(
                 f"{season} {'/'.join(circuit_aliases)}: no usable past-race "
-                f"samples (fetch succeeded with no rows or no clean laps)"
+                f"samples ({reason})"
             )
         elif not pit_contributed:
             warnings.append(
