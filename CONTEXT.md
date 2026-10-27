@@ -52,6 +52,10 @@ _Avoid_: ATA (fine in speech), reduced allocation
 The lap time a Compound loses per lap as it wears.
 _Avoid_: deg (fine in speech), tyre wear, drop-off
 
+**Compound Pace**:
+How much faster a fresh Tyre Set of a Compound laps than a fresh Hard at the same circuit and fuel load, in seconds per lap. The Hard's Compound Pace is 0; a softer Compound is never slower than a harder one.
+_Avoid_: compound delta, tyre offset, grip advantage
+
 **Long Run**:
 A practice Stint of consistently timed consecutive laps at race pace on a heavy fuel load, used to measure Degradation. On sprint weekends, sprint race Stints also count as Long Runs.
 _Avoid_: race sim, race run
