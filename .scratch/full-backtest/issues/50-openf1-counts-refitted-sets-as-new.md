@@ -1,10 +1,10 @@
 # 50: OpenF1 counts re-fitted practice and qualifying sets as new
 
-**What to build:** Remaining Sets for 2023+ races must not count one physical Tyre Set as several new ones. The OpenF1 weekend loader (ticket 21) sets `new_when_fitted = (stint.tyre_age_at_start == 0)`. In practice and qualifying OpenF1 often reports `tyre_age_at_start: 0` on a stint that continues or re-fits a set already used, so the new-only Remaining Sets count runs out of Mediums and Hards that drivers still had. The predictor then drops the Strategy the driver actually ran, or falls back to the used-set or unfiltered count (ADR-0002 amendment), which was meant to be rare.
+**What to build:** On OpenF1-sourced weekends (2023 onward), Remaining Sets ignore OpenF1's new-set signal: every driver starts the race with the full Tyre Allocation, and the prediction says so. The OpenF1 weekend loader (ticket 21) sets `new_when_fitted = (stint.tyre_age_at_start == 0)`. In practice and qualifying, OpenF1 often reports `tyre_age_at_start: 0` on a stint that continues or re-fits a set already used. The new-only Remaining Sets count then runs out of Mediums and Hards that drivers still had, and the predictor drops the Strategy the driver actually ran or falls back (ADR-0002 amendment). Triage found no rule that recovers the true count from OpenF1 data (see the 2026-10-27 triage comment), so the decision is to stop inferring it.
 
 **Blocked by:** None (can start immediately)
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 **Category:** bug
 
@@ -19,11 +19,14 @@
 - Scored drivers on a fallback score worse: OpenF1 new-only 11.6% top-1 / 26.8% top-3, used-set fallback 9.4% / 21.8%.
 - This is the whole gap between Singapore 2024 under FastF1 (ticket 08: top-1 6.5/18, top-3 13.75/18) and under OpenF1 (4.0/18, 8.0/18). PIA, PER, OCO, BOT and STR each lost ½ top-1 and 1 top-3 because their OpenF1 new-set count used up the Medium or Hard they raced on. Under FastF1 they still had it. NOR and HAM lost their partial top-3 credit (½ and ¼) the same way. See ticket 24's Implementation notes.
 
-- [ ] The rule for "new" on OpenF1 data is decided from the data and recorded (for example: a stint that starts on the lap the previous stint of the same Compound ended is the same set; or `tyre_age_at_start == 0` only counts once per Compound per run of consecutive stints), with the cases checked against weekends where the true usage is known
-- [ ] No 2023–2025 driver is counted with more new sets of a Compound than the Tyre Allocation, or any that remain are listed with the reason
-- [ ] The share of OpenF1-era drivers on a fallback is recorded before and after, next to FastF1's 2%
-- [ ] Fixture tests through `data.load_weekend` (no network) cover a back-to-back re-fit in practice and in qualifying
-- [ ] A full Backtest is re-run on the warm cache and compared with the 2026-10-27 baseline; Singapore 2024's move is explained against ticket 08's 6.5/18
+- [ ] For a weekend loaded from OpenF1, every driver's Remaining Sets equal the Tyre Allocation, whatever `tyre_age_at_start` says. The weekend description says set usage is unknown rather than claiming every set was used: for example a `PreRaceInfo` field read by `tyre_allocation`, not `new_when_fitted=False` on every lap. The mechanism is the builder's choice, recorded with the alternative rejected
+- [ ] A prediction made on the full allocation for this reason is labelled with its own `RemainingSetsRule` value, so the single-race report shows it the way it shows the existing fallbacks
+- [ ] FastF1-sourced weekends (2022) are unchanged: still the new-only count with the ADR-0002 fallbacks, until ticket 51 decides otherwise
+- [ ] 2023 Hungarian and 2023 Italian Grands Prix get the Alternative Tyre Allocation trial's 4 Soft / 4 Medium / 3 Hard through the existing `PreRaceInfo.tyre_allocation` override, with a cited source. With the full allocation now used directly, the default (8/3/2) would be wrong there
+- [ ] Other uses of `new_when_fitted` and `tyre_set` are unchanged. Long Run classification groups laps by `tyre_set` (`run_classifier`), so Degradation must not move
+- [ ] ADR-0002 gains an amendment recording the per-source rule and why (OpenF1 doesn't carry F1's "new" flag; measurements in this ticket)
+- [ ] Fixture tests through `data.load_weekend` + `predict()` (no network): an OpenF1 weekend whose stints claim more new sets than the allocation still gets the full allocation and the new label; a FastF1 weekend is unchanged
+- [ ] A full Backtest re-run on the warm cache is compared with the 2026-10-27 baseline. It should match the triage prototype below (2022 identical; 2023–2025 all races top-1 126.33/1,086, top-3 302.08/1,086, Stop Window hits 235/1,977; Singapore 2024 top-1 5.0/18, top-3 10.5/18, hits 2/20), or every difference is explained. This re-run replaces the baseline (ticket 24's analysis then needs its headline figures refreshed)
 
 ## Comments
 
@@ -32,3 +35,53 @@
 > *This was generated by AI during triage.*
 
 Found in ticket 24's analysis. Ticket 18's findings checked `tyre_age_at_start == 0` on three sample sessions only, all races or race-like runs. The ADR-0002 used-set fallback (ticket 12) hides the problem: it stops the crash, so the over-count never failed a test. Fix this before judging ticket 51, because it inflates how often the new-only rule rules out the actual Strategy.
+
+**Triage (2026-10-27), decision: ignore OpenF1's new flag.**
+
+> *This was generated by AI during triage.*
+
+Investigated from the warm cache with scratch scripts outside the repo; no code was changed.
+
+*Is the over-count real?* Yes. Over all 70 cached 2023–2025 weekends, 393 of 1,395 race starters have more stints with `tyre_age_at_start: 0` on some Compound than the allocation allows. That is physically impossible. Against FastF1 2022, whose `FreshTyre` comes from F1's own timing feed, OpenF1 shows more new sets per driver in every session:
+
+| Conventional weekend, mean new sets per driver | FP1 S / M | FP2 S / M | FP3 S / M | Q S |
+|---|---|---|---|---|
+| FastF1 2022 | 0.85 / 0.37 | 0.85 / 0.68 | 1.39 / 0.33 | 2.85 |
+| OpenF1 2023–2025 | 0.99 / 0.68 | 1.19 / 0.90 | 1.67 / 0.48 | 3.21 |
+
+The excess is spread across every session, not one pattern.
+
+*Can a rule recover the true count?* Not one I could find.
+
+- OpenF1's ages are often right. On the second of two back-to-back stints on one Compound it reports the carried-over age 4,903 times, and 0 another 5,824 times. Qualifying runs on fresh Softs really are back to back, so a 0 there is often true.
+- "Back-to-back same-Compound stint = same set" everywhere: over-allocation falls 393 → 27, but Softs drop to 3.45 per weekend against FastF1's 5.94, killing real qualifying sets.
+- The same rule in practice only (trust qualifying): 112 still over the allocation, and Mediums still high in FP1 and FP2.
+- Nothing in OpenF1 carries F1's "new" flag, and the race can't be used to check a pre-race count without leaking the outcome.
+
+*What each option does to the Backtest.* Prototyped by rewriting `new_when_fitted` after loading, over the 62 OpenF1-era scored races. The first row reproduces the baseline.
+
+| Rule | On a fallback | Top-1 (all) | Top-3 (all) | Stop Window hits | Singapore 2024 top-1 / top-3 |
+|---|---|---|---|---|---|
+| Today (`age == 0`) | 319/1,235 (26%) | 120.33/1,086 (11.1%) | 277.33 (25.5%) | 194/1,977 | 4.0 / 8.0 |
+| Cap at the allocation | 26% | 11.3% | 26.1% | 196 | 2.5 / 5.0 |
+| Practice continuation | 114 (9%) | 11.2% | 25.8% | 201 | 3.5 / 7.0 |
+| Practice continuation + cap | 9% | 11.3% | 26.1% | 202 | 3.0 / 6.0 |
+| **Ignore the flag (full allocation)** | **0** | **126.33 (11.6%)** | **302.08 (27.8%)** | **235** | **5.0 / 10.5** |
+
+Green races only, ignoring the flag gives top-1 11.4% → 12.0%, top-3 27.1% → 29.3%, hits 97 → 122 of 735.
+
+*Decision (the user's, 2026-10-27): ignore the flag.*
+
+- It is the only option that doesn't rest on an unvalidated guess, and it scores best on every measure.
+- It is the honest reading of the data: OpenF1 doesn't say which sets were new.
+- Singapore 2024 still doesn't reach ticket 08's 6.5 / 13.75. The rest of that gap is Remaining Sets doing real pruning under FastF1 that OpenF1 can't support, plus the other differences in OpenF1's practice data.
+
+Rejected:
+- *Practice-continuation rule:* small gains, Singapore gets worse, nothing validates it.
+- *Capping at the allocation:* it doesn't change the new-only count at all, because a driver over the allocation already has 0 left.
+- *Folding this into ticket 51:* 51 is about the rule on sound data; this is about data that can't support the rule.
+
+*Consequences.*
+- The two sources now use different Remaining Sets rules: 2022 new-only, 2023+ full allocation. Ticket 51 should decide whether 2022 follows. On FastF1 data the new-only count still rules out 24% of scored drivers' actual Strategy.
+- With Remaining Sets no longer pruning 2023+ predictions, the Alternative Tyre Allocation weekends (2023 Hungary and Monza) need their real allocation. That is criterion 4.
+- The ticket's title describes the defect, not the fix; kept so references from tickets 24 and 51 still read.

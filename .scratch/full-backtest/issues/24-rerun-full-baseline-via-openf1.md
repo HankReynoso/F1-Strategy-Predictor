@@ -273,6 +273,7 @@ Against ticket 08's FastF1-era 6.5/18, 13.75/18 and 3/20, every difference is ex
   - every exclusion is a real wet race
   - every move against the first OpenF1-era run traces to a specific ticket
 - It is not yet a fair "before" number for Circuit Tendency. Ticket 50 is a loader bug that costs 2023–2025 drivers Strategies they could run, and the FastF1 → OpenF1 switch hid it behind ADR-0002's fallback. Fix 50 and re-run the baseline before tuning or adding Circuit Tendency. Otherwise the gain from either will be measured against a handicapped model.
+  - *Correction (2026-10-27, ticket 50's triage):* the handicap is small in aggregate. Prototype rules for 50 cut OpenF1-era fallbacks from 26% to 9% but move all-races top-1 and top-3 by under 1 point. Fixing 50 makes Remaining Sets honest; it doesn't change the headline much. Tickets 52 and 53 remain the bigger levers.
 - The model's biggest weakness is structural, not tuning: it predicts one stop where teams make two or three, and a third of its Degradation rates are zero. Tickets 52 and 53 are worth more than any setting.
 - Top-1 is capped by mirrored ties. Breaking every tie the right way would roughly double top-1 (11% → about 24%). That is the ceiling for what Circuit Tendency can win back through pre-race 09; expect part of it, not all.
 - Ticket 23 put the Singapore drop down mainly to Pit Loss and Historical Degradation shifts. Neither moves the score; the over-count in ticket 50 explains all of it. This is corrected here, not in ticket 23.
