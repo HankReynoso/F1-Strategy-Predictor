@@ -76,7 +76,10 @@ def test_singapore_2024_inside_the_smoke_set_scores_under_the_router() -> None:
     # plus Marina Bay 2023 (OpenF1).
     assert singapore.pit_loss_seasons == (2022, 2023)
     assert singapore.estimated_pit_loss is False
-    assert 25.0 < singapore.pit_loss < 40.0
+    # Ticket 38: 2023 Marina Bay used to be counted twice (once under
+    # "Marina Bay", once under "Singapore"), giving 31.88 s. Counted once,
+    # 2022's 35.16 s median weighs 0.5 against 2023's 31.06 s at 1.0.
+    assert singapore.pit_loss == pytest.approx(32.42, abs=0.01)
     # Router-era scores (recorded 2026-10-26). FastF1-era for reference:
     # top-1 6.5, top-3 13.75, SW hits 3.
     assert singapore.summary.top_1_credit == pytest.approx(4.0)

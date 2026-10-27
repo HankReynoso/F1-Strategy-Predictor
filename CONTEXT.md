@@ -98,6 +98,10 @@ Describes a Candidate Strategy that is legal, runnable with the driver's Remaini
 A run of seasons raced under one set of technical regulations: 2022–2025 is one era, and 2026 starts a new one. Historical information is only drawn from races in the same Regulation Era as the race being predicted.
 _Avoid_: rules era, generation
 
+**Circuit Alias**:
+One of the names a data source has used for the same physical circuit in different seasons, such as Marina Bay and Singapore, Monaco and Monte Carlo, Miami and Miami Gardens, or Yas Island and Yas Marina. Past races are looked up under every Circuit Alias, and each past race counts once in Pit Loss and Historical Degradation, however many aliases find it.
+_Avoid_: venue rename, location alias
+
 **Circuit Tendency**:
 How often each stop count and Compound sequence has been run at a circuit in past Dry Races, with recent seasons counting more.
 

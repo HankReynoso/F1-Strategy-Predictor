@@ -134,9 +134,8 @@ def load_weekend(
 
     ``season`` must be 2023 or later (OpenF1 only covers 2023 onward;
     [ADR-0006](docs/adr/0006-per-season-data-source.md) sends earlier
-    seasons through :mod:`.fastf1_loader`). ``event`` is matched against
-    the meeting's ``meeting_name``, ``location`` or ``country_name``,
-    case-insensitively; the first match wins.
+    seasons through :mod:`.fastf1_loader`). ``event`` must equal the
+    meeting's ``location`` or ``meeting_name``, ignoring case (ticket 38).
 
     ``client`` is the HTTP client (ticket 20). When ``None``, a default
     :class:`.openf1_client.OpenF1Client` pointing at ``cache_dir`` is
@@ -319,24 +318,28 @@ def list_season(
 
 
 def _find_meeting(meetings: list[dict], event: str) -> dict:
-    """First meeting whose ``meeting_name``, ``location`` or
-    ``country_name`` matches ``event``, case-insensitively.
+    """The race meeting whose ``location`` or ``meeting_name`` equals
+    ``event``, ignoring case and surrounding spaces.
 
     Testing weekends are skipped: OpenF1 includes "Pre-Season Testing"
     in the yearly meeting list, which ``list_season`` (ticket 23) also
-    needs to filter out. Matching is a lowercase substring test so a
-    caller can pass "Monza", "Italian Grand Prix" or "Italy" and reach
-    the same row.
+    needs to filter out. A caller can pass "Monza" or "Italian Grand
+    Prix" and reach the same row.
+
+    Ticket 38: the match is exact. It used to be a substring test that
+    also read ``country_name``, so a short name could reach a meeting
+    through a longer one: "Singapore" found the Marina Bay meeting through
+    its meeting name and country, and the history scan counted that race
+    once per alias; "Miami" would find 2025's "Miami Gardens"; "United
+    States" picked whichever of three meetings came first.
     """
-    needle = event.strip().lower()
+    needle = event.strip().casefold()
     for row in meetings:
         if not _is_race_meeting(row):
             continue
-        for field in ("meeting_name", "location", "country_name"):
+        for field in ("location", "meeting_name"):
             value = row.get(field)
-            if value is None:
-                continue
-            if needle in str(value).lower():
+            if value is not None and str(value).strip().casefold() == needle:
                 return row
     raise ValueError(
         f"no OpenF1 meeting matched event={event!r}; "
@@ -912,10 +915,18 @@ class PastRaceSamples:
     the merger only has to apply the recent-seasons weight
     ``0.5 ** (gap - 1)`` and the lap-count × season-weight weighted
     mean (same formulas as :func:`.fastf1_loader._past_races_at_circuit`).
+
+    ``race_id`` is the source's own name for the race the samples came
+    from: ``"openf1 session <race session_key>"`` or ``"fastf1 <season>
+    round <round>"``. The past-race scan asks for a circuit once per alias
+    name (ticket 16), so it counts each race once per season by this
+    identity rather than by the name it asked for (ticket 38). ``None``
+    when no race was found.
     """
 
     pit_losses: tuple[float, ...]
     stint_rates: tuple[tuple[Compound, float, int], ...]
+    race_id: str | None = None
 
 
 def _pit_losses_in(
@@ -1169,7 +1180,11 @@ def load_past_race_samples(
             history_min_stint_length,
         )
     )
-    return PastRaceSamples(pit_losses=losses, stint_rates=rates)
+    return PastRaceSamples(
+        pit_losses=losses,
+        stint_rates=rates,
+        race_id=f"openf1 session {rows['session_key']}",
+    )
 
 
 def _load_past_race_rows(
@@ -1285,6 +1300,7 @@ def _past_races_at_circuit(
         c: [] for c in DRY_COMPOUNDS
     }
     for season in range(min_season, race_season):
+        counted: set[str] = set()
         for alias in sorted(circuit_aliases):
             # OpenF1FetchError propagates so the Backtest can exclude as
             # FETCH_FAILED (ticket 28). An alias OpenF1 doesn't know about
@@ -1298,6 +1314,11 @@ def _past_races_at_circuit(
             )
             if not samples.pit_losses and not samples.stint_rates:
                 continue
+            # Ticket 38: two alias names can reach the same race.
+            if samples.race_id in counted:
+                continue
+            if samples.race_id is not None:
+                counted.add(samples.race_id)
             weight = 0.5 ** (race_season - season - 1)
             losses = sorted(samples.pit_losses)
             if losses:

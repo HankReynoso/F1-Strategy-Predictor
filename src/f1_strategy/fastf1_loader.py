@@ -685,7 +685,11 @@ def load_past_race_samples(
         )
     except Exception:
         rates = ()
-    return PastRaceSamples(pit_losses=losses, stint_rates=rates)
+    return PastRaceSamples(
+        pit_losses=losses,
+        stint_rates=rates,
+        race_id=f"fastf1 {season} round {int(row['RoundNumber'])}",
+    )
 
 
 # Back-compat alias: tests from ticket 07 pin the old function name.

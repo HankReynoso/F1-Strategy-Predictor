@@ -97,19 +97,19 @@ def test_circuit_is_the_meetings_location(monza_weekend):
 
 
 def test_event_can_be_matched_by_location(monza_fixture):
-    """Matching on ``event`` is case-insensitive and tries meeting_name,
-    location and country_name; "Monza" (location) alone resolves."""
+    """``event`` must equal the meeting's location or meeting_name,
+    ignoring case (ticket 38); "monza" (location) alone resolves."""
     weekend = load_weekend(
         2024, "monza", client=_FixtureClient(monza_fixture)
     )
     assert weekend.pre_race.circuit == "Monza"
 
 
-def test_event_can_be_matched_by_country(monza_fixture):
-    weekend = load_weekend(
-        2024, "Italy", client=_FixtureClient(monza_fixture)
-    )
-    assert weekend.pre_race.circuit == "Monza"
+def test_event_is_not_matched_by_country(monza_fixture):
+    """Ticket 38: a country can hold several meetings in one season
+    (Italy: Imola and Monza), so it is not an event name."""
+    with pytest.raises(ValueError):
+        load_weekend(2024, "Italy", client=_FixtureClient(monza_fixture))
 
 
 def test_unknown_event_raises_value_error(monza_fixture):

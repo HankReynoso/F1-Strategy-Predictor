@@ -21,7 +21,9 @@ directly. The facade:
 
 The alias group from :mod:`.location_aliases` (ticket 16) is honoured
 in both branches, so a venue renamed between seasons still gets its
-earlier races picked up.
+earlier races picked up. Each past race counts once per season however
+many alias names reach it, by the source's own race identity
+(:attr:`PastRaceSamples.race_id`, ticket 38).
 """
 
 from __future__ import annotations
@@ -211,6 +213,7 @@ def measure_pit_loss_and_history(
     for season in range(era_min_season, race_season):
         pit_contributed = False
         hist_contributed = False
+        counted: set[str] = set()
         for alias in circuit_aliases:
             samples = _fetch_past_samples(
                 season=season,
@@ -224,6 +227,12 @@ def measure_pit_loss_and_history(
             )
             if not samples.pit_losses and not samples.stint_rates:
                 continue
+            # Ticket 38: two alias names can reach the same race; count it
+            # once, by the source's own race identity.
+            if samples.race_id in counted:
+                continue
+            if samples.race_id is not None:
+                counted.add(samples.race_id)
             weight = 0.5 ** (race_season - season - 1)
             losses = sorted(samples.pit_losses)
             if losses:
@@ -383,6 +392,7 @@ def _measure_pre_era_pit_loss(
         return None
     pit_weighted: list[tuple[float, float, int]] = []
     for season in range(PIT_LOSS_PRE_ERA_MIN_SEASON, era_min_season):
+        counted: set[str] = set()
         for alias in circuit_aliases:
             # FastF1CriticalError propagates (rate limit → Backtest retry).
             # fastf1_loader.load_past_race_samples already returns empty
@@ -396,8 +406,10 @@ def _measure_pre_era_pit_loss(
                 history_min_stint_length=history_min_stint_length,
             )
             losses = sorted(samples.pit_losses)
-            if not losses:
+            if not losses or samples.race_id in counted:
                 continue
+            if samples.race_id is not None:
+                counted.add(samples.race_id)
             weight = 0.5 ** (race_season - season - 1)
             pit_weighted.append((losses[len(losses) // 2], weight, season))
     if not pit_weighted:
