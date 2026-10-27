@@ -71,11 +71,11 @@ This matters before tuning, which will need many full re-runs.
 
 Possible directions (to decide at triage): FastF1's offline mode (use only the cache, never revalidate) for re-runs, either automatically when the cache is warm or via a flag; or configuring FastF1's cache so past-season responses never expire, since finished races don't change. Either way, a missing cache entry in offline mode must surface as a clear Excluded Race reason, never as silently missing data (ticket 28's rule).
 
-- [ ] A second full Backtest run on a warm cache makes no FastF1 network requests for data it already has, and never waits on FastF1's rate limit
-- [ ] The results of that run are identical to a normal run on the same cache
-- [ ] A race whose data isn't in the cache still loads normally on a normal run, and in any cache-only mode is excluded with a clear "not in cache" reason
-- [ ] The requests-cache tracebacks no longer flood the output on a warm run
-- [ ] The README's run-time notes are corrected
+- (superseded by the Agent Brief's criteria) A second full Backtest run on a warm cache makes no FastF1 network requests for data it already has, and never waits on FastF1's rate limit
+- (superseded by the Agent Brief's criteria) The results of that run are identical to a normal run on the same cache
+- (superseded by the Agent Brief's criteria) A race whose data isn't in the cache still loads normally on a normal run, and in any cache-only mode is excluded with a clear "not in cache" reason
+- (superseded by the Agent Brief's criteria) The requests-cache tracebacks no longer flood the output on a warm run
+- (superseded by the Agent Brief's criteria) The README's run-time notes are corrected
 
 **Triage (2026-10-27).**
 
