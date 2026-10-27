@@ -22,9 +22,14 @@ class RemainingSetsRule(Enum):
     pre-race are added to the pool, capped at the allocation. If that still
     leaves nothing, UNFILTERED_FALLBACK gives the driver every legal Strategy
     with no Remaining Sets pruning at all.
+
+    A weekend whose source can't say which sets were new (OpenF1, ticket 50)
+    predicts every driver under FULL_ALLOCATION: Remaining Sets is the whole
+    Tyre Allocation, and the fallbacks never apply.
     """
 
     NEW_ONLY = "new-only"
+    FULL_ALLOCATION = "full allocation (set usage unknown)"
     USED_SET_FALLBACK = "used-set fallback"
     UNFILTERED_FALLBACK = "unfiltered fallback"
 
@@ -96,7 +101,9 @@ def predict(
         rates = {c: e.rate for c, e in estimates.items()}
         remaining = driver_remaining[driver]
         rule = RemainingSetsRule.NEW_ONLY
-        if not _has_runnable_strategy(remaining, pre_race.race_laps, settings):
+        if not pre_race.set_usage_known:
+            rule = RemainingSetsRule.FULL_ALLOCATION
+        elif not _has_runnable_strategy(remaining, pre_race.race_laps, settings):
             if fallback_remaining is None:
                 fallback_remaining = remaining_sets_including_used(pre_race)
             remaining = fallback_remaining[driver]

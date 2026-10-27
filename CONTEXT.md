@@ -41,8 +41,12 @@ One set of four tyres of a single Compound, either new or used.
 _Avoid_: tyre, set of tyres
 
 **Tyre Allocation**:
-The Tyre Sets a driver has for a race weekend. The sets still usable in the race are the driver's **Remaining Sets**.
+The Tyre Sets a driver has for a race weekend. The sets still usable in the race are the driver's **Remaining Sets**: the allocation minus the new sets fitted before the race, when the data says which sets were new (FastF1, 2022), or the whole allocation when it doesn't (OpenF1, 2023 onward).
 _Avoid_: tyre inventory, stock
+
+**Alternative Tyre Allocation**:
+The 2023 trial Tyre Allocation of 11 sets (4 Soft, 4 Medium, 3 Hard) instead of 13, with a fixed Compound for each qualifying part. Used only at the 2023 Hungarian and Italian Grands Prix.
+_Avoid_: ATA (fine in speech), reduced allocation
 
 **Degradation**:
 The lap time a Compound loses per lap as it wears.

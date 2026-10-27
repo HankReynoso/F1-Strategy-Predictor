@@ -40,6 +40,7 @@ from .backtest import RaceSpec
 from .location_aliases import location_group
 from .openf1_client import OpenF1Client
 from .regulation_era import era_start
+from .tyre_allocation import allocation_override
 from .weekend import (
     DRY_COMPOUNDS,
     Compound,
@@ -258,6 +259,11 @@ def load_weekend(
             estimated_pit_loss=estimated_pit_loss,
             historical_degradation=historical_degradation,
             data_quality_warnings=data_quality_warnings,
+            tyre_allocation=allocation_override(season, str(meeting["meeting_name"])),
+            # OpenF1 has no "new set" flag, and `tyre_age_at_start` reads 0
+            # on many re-fitted sets, so Remaining Sets uses the full
+            # allocation (ticket 50, ADR-0002 amendment).
+            set_usage_known=False,
         ),
         race=RaceOutcome(
             stints=stints,

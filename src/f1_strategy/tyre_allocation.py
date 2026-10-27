@@ -7,7 +7,9 @@ it via `PreRaceInfo.tyre_allocation`. Remaining Sets is then the
 allocation minus new-set usage drawn from pre-race sessions.
 
 See ticket 04 for the decision to count new sets only; the ticket's
-Implementation notes explain the trade-off.
+Implementation notes explain the trade-off. A weekend whose source can't
+say which sets were new (`PreRaceInfo.set_usage_known` is False, OpenF1)
+gets the full allocation instead (ticket 50, ADR-0002 amendment).
 """
 
 from .weekend import Compound, PreRaceInfo
@@ -26,10 +28,34 @@ DEFAULT_SPRINT_ALLOCATION: dict[Compound, int] = {
 }
 
 
+# Alternative Tyre Allocation trial (FIA 2023 Sporting Regulations): 11 sets
+# instead of 13, with Hards in Q1, Mediums in Q2 and Softs in Q3. Run at two
+# conventional weekends only, keyed by (season, event name):
+# https://www.formula1.com/en/latest/article/what-tyres-will-the-teams-and-drivers-have-for-the-2023-hungarian-grand-prix.4hNRA4AFjDT1PtiDn56imH
+# https://www.formula1.com/en/latest/article/what-tyres-will-the-teams-and-drivers-have-for-the-2023-italian-grand-prix.6h2cQeDiNp8Wqs6lj4ArWJ
+_ALTERNATIVE_TYRE_ALLOCATION: dict[Compound, int] = {
+    Compound.SOFT: 4,
+    Compound.MEDIUM: 4,
+    Compound.HARD: 3,
+}
+_ALTERNATIVE_TYRE_ALLOCATION_WEEKENDS = {
+    (2023, "Hungarian Grand Prix"),
+    (2023, "Italian Grand Prix"),
+}
+
+
 def default_allocation(is_sprint_weekend: bool) -> dict[Compound, int]:
     return dict(
         DEFAULT_SPRINT_ALLOCATION if is_sprint_weekend else DEFAULT_DRY_ALLOCATION
     )
+
+
+def allocation_override(season: int, event_name: str) -> dict[Compound, int] | None:
+    """The `PreRaceInfo.tyre_allocation` override for a weekend that didn't
+    use the regulation allocation, or None when it did."""
+    if (season, event_name) in _ALTERNATIVE_TYRE_ALLOCATION_WEEKENDS:
+        return dict(_ALTERNATIVE_TYRE_ALLOCATION)
+    return None
 
 
 def remaining_sets(pre_race: PreRaceInfo) -> dict[str, dict[Compound, int]]:
@@ -38,10 +64,15 @@ def remaining_sets(pre_race: PreRaceInfo) -> dict[str, dict[Compound, int]]:
     A set is counted as "used" when a driver fits it fresh in any pre-race
     session: one distinct `tyre_set` with `new_when_fitted=True` is one
     new set consumed. Used-set stints do not subtract from the allocation.
+
+    When the weekend's source can't say which sets were new
+    (`set_usage_known` is False), every driver gets the full allocation.
     """
     allocation = pre_race.tyre_allocation or default_allocation(
         pre_race.is_sprint_weekend
     )
+    if not pre_race.set_usage_known:
+        return {driver: dict(allocation) for driver in pre_race.teams}
     new_sets, _ = _collect_fitted_sets(pre_race, allocation)
     return {
         driver: {

@@ -80,6 +80,13 @@ class PreRaceInfo:
     # New sets of each dry Compound allocated to every driver this weekend.
     # None means use the FIA regulation default for the weekend format.
     tyre_allocation: dict["Compound", int] | None = None
+    # Whether the source says which Tyre Sets were new when fitted. FastF1
+    # carries F1's own "new" flag; OpenF1 doesn't, and its
+    # `tyre_age_at_start` reads 0 on many re-fitted sets (ticket 50). When
+    # False, every driver's Remaining Sets is the full Tyre Allocation
+    # (ADR-0002 amendment, 2026-10-27). `Lap.new_when_fitted` is still
+    # filled in either way; only Remaining Sets reads this field.
+    set_usage_known: bool = True
     # Field-level Degradation per dry Compound from previous seasons' race
     # Stints at this circuit (ticket 11, ADR-0003). A Compound is absent when
     # no clean past-race Stints were available for it, or (deliberately) when

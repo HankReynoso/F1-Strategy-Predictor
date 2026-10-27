@@ -14,6 +14,21 @@ The claim above that a new-only count "only ever shrinks the Candidate set" is w
 
 Concretely (ticket 12 implementation): the used-set count per Compound is the number of distinct `tyre_set` ids whose first lap had `new_when_fitted=False`, capped by the Tyre Allocation. Because the FastF1 loader assigns a per-stint id, one physical used set fitted in two sessions registers as two ids and the fallback over-counts; the allocation cap bounds the error, and the flag on the prediction (`USED_SET_FALLBACK` or `UNFILTERED_FALLBACK`) tells callers that this driver's Remaining Sets is the approximate used-inclusive count rather than the exact new-only count. Being slightly over-permissive is preferable to the crash it replaces.
 
+## Amendment (2026-10-27): per-source rule, OpenF1 weekends get the full allocation
+
+The new-only count needs to know which Tyre Sets were new when fitted. FastF1 (2022) reads that from F1's own timing feed (`FreshTyre`). OpenF1 (2023 onward, [ADR-0006](0006-per-season-data-source.md)) has no such flag: the loader inferred it from `tyre_age_at_start == 0`, and in practice and qualifying OpenF1 often reports 0 on a stint that continues or re-fits a set already used. Over the 70 cached 2023–2025 weekends, 393 of 1,395 race starters show more "new" sets of some Compound than the Tyre Allocation, which is impossible. In the 2026-10-27 baseline 26% of OpenF1-era driver predictions fell back (used-set or unfiltered), against 2% on FastF1. No rule tried during triage recovered the true count (back-to-back stints as one set, practice-only continuation, capping): each rests on an unvalidated guess, and the race can't be used to check a pre-race count without leaking the outcome. Measurements are in [ticket 50](../../.scratch/full-backtest/issues/50-openf1-counts-refitted-sets-as-new.md).
+
+So the rule is now per source:
+
+- **FastF1 (2022 and earlier):** unchanged. New-only count with the used-set and unfiltered fallbacks above.
+- **OpenF1 (2023 onward):** every driver's Remaining Sets is the full Tyre Allocation, and the prediction is labelled `FULL_ALLOCATION` ("full allocation (set usage unknown)") so the single-race report shows it the way it shows the fallbacks. The fallbacks never apply.
+
+The weekend description carries this as `PreRaceInfo.set_usage_known` (False from the OpenF1 loader), read only by the Tyre Allocation tracker. `Lap.new_when_fitted` is still derived from `tyre_age_at_start` and `tyre_set` ids are unchanged, so Long Run classification and Degradation don't move. Setting `new_when_fitted=False` on every OpenF1 lap was rejected: it would make the weekend claim every set was used rather than say usage is unknown, and the used-set fallback would then read it as data.
+
+With Remaining Sets no longer pruning 2023+ predictions, the allocation itself matters. The two 2023 Alternative Tyre Allocation weekends (Hungary and Monza: 4 Soft, 4 Medium, 3 Hard) now set `PreRaceInfo.tyre_allocation` through the override this ADR already provides.
+
+The full allocation overstates what a driver has in the race, since regulation set returns and practice wear aren't counted. This is the permissive side of the trade-off the original decision made conservatively: it can allow a Strategy a driver couldn't run, but never rules out one they could. The decision rests on the data, not the score: OpenF1 doesn't say which sets were new, and this is the only option that doesn't guess. Whether 2022 should follow, so the two sources share one rule, is [ticket 51](../../.scratch/full-backtest/issues/51-new-only-remaining-sets-rule-out-actual-strategies.md).
+
 ## Considered Options
 
 - **Track every physical set across sessions** (match used stints to earlier new ones by starting Tyre Life): rejected because FastF1 does not expose a persistent Tyre Set id and the Tyre Life matching heuristic is ambiguous for about half of used stints (ticket 07). The precision gained is small and the data pipeline becomes brittle to FastF1 cleanup.
