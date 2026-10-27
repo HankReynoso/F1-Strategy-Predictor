@@ -33,6 +33,7 @@ from enum import Enum
 
 from .degradation import DegradationSource
 from .fastf1_errors import FastF1FetchError
+from .offline import NotDownloadedError
 from .openf1_client import OpenF1FetchError
 from .predictor import NotDryRaceError, predict
 from .rate_limit import WAIT_SECONDS_DEFAULT, RateLimitWait, default_wait
@@ -94,6 +95,7 @@ class ExclusionReason(Enum):
     PREDICTION_FAILED = "prediction failed"
     DATA_UNAVAILABLE = "data unavailable"
     FETCH_FAILED = "fetch failed (rate limit or network)"
+    NOT_DOWNLOADED = "not downloaded (offline run)"
 
 
 @dataclass(frozen=True)
@@ -254,9 +256,10 @@ def run_backtest(
     is called, then the same race is retried up to ``max_rate_limit_retries``
     times before being excluded with reason ``FETCH_FAILED``. ``wait``
     defaults to ``rate_limit.default_wait`` (a real ``time.sleep``); tests
-    inject a fake so no test actually sleeps. A warm-cache re-run never
-    triggers ``wait`` because cached FastF1 requests do not count toward
-    the hourly limit.
+    inject a fake so no test actually sleeps. An online warm-cache re-run
+    can still trigger ``wait``: FastF1 re-requests saved responses it
+    considers stale, and those count toward the hourly limit. An offline
+    run (ticket 36) sends no request, so it never waits.
     """
     settings = settings or Settings()
     wait = wait if wait is not None else default_wait
@@ -280,6 +283,19 @@ def run_backtest(
                     event=spec.event,
                     reason=ExclusionReason.FETCH_FAILED,
                     detail=f"FastF1 rate limit still raised after retrying: {error}",
+                )
+            )
+            continue
+        except NotDownloadedError as error:
+            # Ticket 36: an offline run needed data that isn't saved. Online,
+            # it would have been fetched, so this is neither a fetch failure
+            # nor missing data.
+            excluded.append(
+                ExcludedRace(
+                    season=spec.season,
+                    event=spec.event,
+                    reason=ExclusionReason.NOT_DOWNLOADED,
+                    detail=str(error),
                 )
             )
             continue

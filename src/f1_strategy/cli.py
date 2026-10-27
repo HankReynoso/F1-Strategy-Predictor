@@ -16,6 +16,10 @@ Backtest mode:
 
 Lists the chosen seasons' race weekends through FastF1 and runs each one
 through `predict` and `compare`, printing progress and the Backtest Result.
+
+Every command takes `--offline` (ticket 36): read only the data already
+downloaded and never contact FastF1 or OpenF1. Anything not saved is
+reported as not downloaded.
 """
 
 from __future__ import annotations
@@ -68,10 +72,11 @@ def _run_single_race(argv: Sequence[str], load: Loader | None) -> int:
     )
     parser.add_argument("season", type=int, help="e.g. 2024")
     parser.add_argument("event", help='event or location name, e.g. "Italian Grand Prix"')
+    _add_offline_argument(parser)
     args = parser.parse_args(argv)
 
     if load is None:
-        load = _fastf1_load()
+        load = _fastf1_load(offline=args.offline)
 
     settings = Settings()
     weekend = load(args.season, args.event)
@@ -131,10 +136,11 @@ def _run_backtest_mode(
         default="results/backtest",
         help="where saved Backtest Results go (default: results/backtest).",
     )
+    _add_offline_argument(parser)
     args = parser.parse_args(argv)
 
     if list_season is None or load is None:
-        default_load, default_list = _fastf1_load_and_list()
+        default_load, default_list = _fastf1_load_and_list(offline=args.offline)
         if load is None:
             load = default_load
         if list_season is None:
@@ -150,7 +156,8 @@ def _run_backtest_mode(
     settings = Settings()
     print(
         f"Backtest over {len(races)} race weekend(s) "
-        f"in season(s) {', '.join(str(s) for s in args.seasons)}",
+        f"in season(s) {', '.join(str(s) for s in args.seasons)}"
+        + (" (offline: saved data only)" if args.offline else ""),
         file=sys.stderr,
     )
     result = run_backtest(races, load=load, settings=settings, progress=progress)
@@ -165,6 +172,7 @@ def _run_backtest_mode(
             uncommitted_changes=dirty,
             seasons_in_scope=tuple(args.seasons),
             settings=settings,
+            offline=args.offline,
         )
         paths = save_backtest_result(result, args.results_dir, metadata=metadata)
         print(
@@ -186,17 +194,20 @@ def _run_smoke_mode(argv: Sequence[str], load: Loader | None) -> int:
             "without saving it."
         ),
     )
-    parser.parse_args(argv)
+    _add_offline_argument(parser)
+    args = parser.parse_args(argv)
 
     if load is None:
-        load = _fastf1_load()
+        load = _fastf1_load(offline=args.offline)
 
     def progress(label: str) -> None:
         print(f"  {label}", file=sys.stderr, flush=True)
 
     settings = Settings()
     print(
-        f"Smoke Set over {len(SMOKE_SET)} race weekend(s)", file=sys.stderr
+        f"Smoke Set over {len(SMOKE_SET)} race weekend(s)"
+        + (" (offline: saved data only)" if args.offline else ""),
+        file=sys.stderr,
     )
     result = run_backtest(SMOKE_SET, load=load, settings=settings, progress=progress)
     print(format_backtest(result))
@@ -230,7 +241,18 @@ def _run_compare_mode(argv: Sequence[str]) -> int:
     return 0
 
 
-def _fastf1_load() -> Loader:
+def _add_offline_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help=(
+            "read only data already downloaded; never contact FastF1 or "
+            "OpenF1. Anything not saved is reported as not downloaded."
+        ),
+    )
+
+
+def _fastf1_load(offline: bool = False) -> Loader:
     """Default loader for every top-level command: the ticket 23 data
     facade. Dispatches to FastF1 or OpenF1 by season (ADR-0006).
 
@@ -239,11 +261,11 @@ def _fastf1_load() -> Loader:
     cross-source :func:`data.load_weekend`, not the single-source
     FastF1 one.
     """
-    load, _ = _fastf1_load_and_list()
+    load, _ = _fastf1_load_and_list(offline=offline)
     return load
 
 
-def _fastf1_load_and_list() -> tuple[Loader, SeasonLister]:
+def _fastf1_load_and_list(offline: bool = False) -> tuple[Loader, SeasonLister]:
     """The default loader and season lister for one run, sharing one
     OpenF1 client (ticket 42).
 
@@ -251,13 +273,19 @@ def _fastf1_load_and_list() -> tuple[Loader, SeasonLister]:
     remembering its recent requests. Called with no client, the router
     builds a new one per race, so each race would start with an empty
     memory and could burst past the limit the previous race had reached.
+
+    FastF1's cache is set up here, once per run, in the run's mode (ticket
+    36); the loads keep that setup instead of rebuilding it. ``offline``
+    makes both sources read their saved data only.
     """
     import fastf1
 
     from .data import list_season, load_weekend
+    from .fastf1_loader import set_up_cache
 
     fastf1.set_log_level("WARNING")
-    openf1_client = OpenF1Client(cache_dir=Path(".cache/openf1"))
+    set_up_cache(Path(".cache/fastf1"), offline=offline)
+    openf1_client = OpenF1Client(cache_dir=Path(".cache/openf1"), offline=offline)
     return (
         functools.partial(load_weekend, openf1_client=openf1_client),
         functools.partial(list_season, openf1_client=openf1_client),

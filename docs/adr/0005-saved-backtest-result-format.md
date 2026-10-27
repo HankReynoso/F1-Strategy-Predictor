@@ -14,7 +14,7 @@ Everything on `RaceResult`: `season`, `event`, `circuit`, `is_sprint_weekend`, `
 
 ## What's saved as run metadata
 
-Label, run date and time (ISO 8601 UTC), code commit, uncommitted-changes flag, seasons in scope, and every field of `Settings` (which includes `tuning_seasons` and `held_out_season`). The commit and the uncommitted-changes flag trace a result back to the code that made it; the seasons in scope let the compare command warn when two results cover different races; `Settings` goes in whole so a tuned run reads back with the same partition and the same thresholds.
+Label, run date and time (ISO 8601 UTC), code commit, uncommitted-changes flag, seasons in scope, whether the run was offline (`offline`, from ticket 36: read saved data only, never contacted FastF1 or OpenF1), and every field of `Settings` (which includes `tuning_seasons` and `held_out_season`). The commit and the uncommitted-changes flag trace a result back to the code that made it; the seasons in scope let the compare command warn when two results cover different races; `Settings` goes in whole so a tuned run reads back with the same partition and the same thresholds.
 
 ## What's NOT saved
 
@@ -47,3 +47,5 @@ Rejected for version 2: saving the warnings as an optional field at version 1. T
 - **Version 3** (ticket 58): adds the required per-race `predicted_strategy_stops` (actual stops on a Strategy that was one of the driver's Candidate Strategies, the Predicted-Strategy Stops) and `stop_window_laps` (the summed width of their Stop Windows). They give Stop Window hits over Predicted-Strategy Stops and the average Stop Window width. A missing count would read as "0 Predicted-Strategy Stops", a real value, so the rule above bumps the version. A file before version 3 loads with both as `None` ("not recorded"), every aggregate built from them is `None` too, the summary prints "not recorded", and the compare command warns once that it can't compare them. Neither can be recovered for an old file: they need the per-driver Candidate Strategies, which a Backtest Result never saves. Both committed results (`2026-10-26_first-openf1-run`, version 1, and `2026-10-27_baseline`, version 2) load this way.
 
 Rejected for version 3: saving the two keys as optional at version 2, for the same two reasons as version 2's warnings.
+
+- **`offline` run metadata** (ticket 36), still version 3: an additive, defaulted field. A file without it loads as `offline: false`, and that is a true value, not a guess: offline mode didn't exist before ticket 36, so every run saved before it was online. An older build reading a newer file drops the flag, which loses nothing it could act on, since the scores are the same either way on the same cache. A version bump was rejected for that reason: it would make every older build refuse every new file for a field none of them reads.

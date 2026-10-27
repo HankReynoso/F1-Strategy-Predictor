@@ -34,6 +34,7 @@ from typing import Callable
 from . import fastf1_loader, openf1_loader
 from .backtest import RaceSpec
 from .location_aliases import location_group
+from .offline import NotDownloadedError
 from .openf1_client import OpenF1Client, OpenF1FetchError
 from .openf1_loader import OPENF1_FIRST_SEASON, PastRaceSamples
 from .pit_lane_table import estimated_pit_loss as _estimate_from_table
@@ -338,13 +339,18 @@ def _fetch_past_samples(
         # the meeting isn't found or the race session is missing (a 2022
         # alias passed by mistake would land here); OpenF1FetchError and
         # unexpected RuntimeErrors propagate.
-        return openf1_load_past_race_samples(
-            openf1_client,
-            season,
-            event,
-            fuel_effect_s_per_lap=fuel_effect_s_per_lap,
-            history_min_stint_length=history_min_stint_length,
-        )
+        try:
+            return openf1_load_past_race_samples(
+                openf1_client,
+                season,
+                event,
+                fuel_effect_s_per_lap=fuel_effect_s_per_lap,
+                history_min_stint_length=history_min_stint_length,
+            )
+        except NotDownloadedError as error:
+            # Ticket 36: offline, a past race that was never downloaded is a
+            # Data Quality Warning saying so, as FastF1's past races are.
+            return PastRaceSamples(pit_losses=(), stint_rates=(), note=str(error))
     # FastF1 branch: load_past_race_samples re-raises FastF1CriticalError
     # (rate limit) and returns empty samples for every other load failure.
     return fastf1_load_past_race_samples(

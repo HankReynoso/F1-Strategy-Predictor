@@ -35,9 +35,9 @@ uv run f1-strategy backtest 2022 2023 2024 2025 --label baseline
 
 What to expect on your laptop with an empty `.cache/fastf1`:
 
-- **Download cost (one-off).** The first full run downloads every race weekend through FastF1. Measured in a cloud session, a cold race weekend takes ~42 s and a cached one ~4 s (ticket 02). That is ~17 min of downloads per season on a cold cache, so the four-season transfer itself takes **~1 h** end-to-end. Later runs reuse the on-disk cache and finish in a few minutes.
-- **FastF1 rate limit.** FastF1 3.8 allows at most **500 uncached API calls per hour** across all its data sources and raises `RateLimitExceededError` beyond that (sliding one-hour window). A cold-cache weekend load spends roughly 50 of those calls between the race itself and the past-season pulls for Pit Loss and Historical Degradation, so after about nine weekends the limit is hit. The Backtest waits out the hour and resumes, with a message to stderr naming roughly when it will resume (ticket 17). On a cold cache the baseline Backtest therefore takes **~10 h wall-clock**: around nine 1-hour waits with 10 min of transfers between them. The run can be left unattended — it never turns a rate-limit hit into an Excluded Race. Warm-cache runs never wait, because cached FastF1 requests don't count toward the limit.
-- **Compute cost.** The predict/compare loop itself is fast (~1 s per race on cached data), so cached runs over the full era take **~2–3 min** after the downloads are done.
+- **Download cost (one-off).** The first full run downloads every race weekend through FastF1. Measured in a cloud session, a cold race weekend takes ~42 s and a cached one ~4 s (ticket 02). That is ~17 min of downloads per season on a cold cache, so the four-season transfer itself takes **~1 h** end-to-end. Later runs reuse the on-disk cache; run them with `--offline` (below) so they finish in minutes.
+- **FastF1 rate limit.** FastF1 3.8 allows at most **500 uncached API calls per hour** across all its data sources and raises `RateLimitExceededError` beyond that (sliding one-hour window). A cold-cache weekend load spends roughly 50 of those calls between the race itself and the past-season pulls for Pit Loss and Historical Degradation, so after about nine weekends the limit is hit. The Backtest waits out the hour and resumes, with a message to stderr naming roughly when it will resume (ticket 17). On a cold cache the baseline Backtest therefore takes **~10 h wall-clock**: around nine 1-hour waits with 10 min of transfers between them. The run can be left unattended — it never turns a rate-limit hit into an Excluded Race. **Online warm-cache runs can still wait:** FastF1's request cache treats some saved responses (Ergast/Jolpica results, laps, qualifying) as stale after 12 hours and re-requests them, and each re-request counts toward the limit, so a full online re-run can stop for an hour at a time (ticket 36). Use `--offline` for re-runs.
+- **Compute cost.** The predict/compare loop itself is fast (~1 s per race on cached data). A full four-season `--offline` run on the warm laptop cache took **~5 min** wall-clock with no network requests (ticket 36, 2026-10-27).
 - **Output.** Progress for each race goes to stderr; the formatted Backtest Result goes to stdout. The result shows the pooled green-race headline, race-averaged versions, Neutralised-only and all-races figures, breakdowns by season / circuit / sprint vs conventional, Tuning Seasons vs Held-out Season, Degradation source counts, and the Excluded Races list.
 - **Where it is saved.** With `--label baseline`, two files land in `results/backtest/` (the folder is created on first save):
   - `<YYYY-MM-DD>_baseline.json` — the machine-readable Backtest Result that the compare command reads.
@@ -54,7 +54,21 @@ uv run f1-strategy backtest 2024 --label spot-check
 uv run f1-strategy backtest 2022 2023 2024 2025 --label baseline
 ```
 
-Other flags: `--no-save` forces print-only even when `--label` is given; `--results-dir` points saves elsewhere (default `results/backtest`).
+Other flags: `--no-save` forces print-only even when `--label` is given; `--results-dir` points saves elsewhere (default `results/backtest`); `--offline` reads saved data only (next section).
+
+### Offline or online
+
+Every command (`backtest`, `smoke` and the single-race command) runs **online** by default and takes `--offline`:
+
+```sh
+uv run f1-strategy backtest 2022 2023 2024 2025 --offline --label tuned-run
+uv run f1-strategy smoke --offline
+```
+
+- **Online** fetches anything not yet downloaded. Use it for the first run on a new machine, for new races, and whenever the cache is cold. It is subject to FastF1's 500-per-hour limit, including on a warm cache (above).
+- **Offline** reads only `.cache/fastf1` and `.cache/openf1` and never contacts FastF1 or OpenF1, so it never waits on a rate limit. Use it for every re-run on data you already have, such as tuning comparisons. On the same cache its results are identical to an online run's: the Smoke Set printed byte-identical results both ways (ticket 36).
+- Anything an offline run needs but doesn't have is reported, never skipped silently. A race it can't build is an Excluded Race, `not downloaded (offline run)`. A past race or session it can't read is a Data Quality Warning saying `not downloaded`. The 2018–2020 seasons, which the timing archive refuses without an F1 TV login (ADR-0006), keep their archive reason both ways. If a run reports something as not downloaded, run it once online to fetch it.
+- A saved Backtest Result records which mode it ran in (`offline` in the data file, a `Data:` line in the summary).
 
 ### After the run: label, commit and push
 
@@ -76,7 +90,7 @@ The Smoke Set is a six-race subset covering every path through the model: Singap
 uv run f1-strategy smoke
 ```
 
-Use it to check nothing broke end to end before running a full Backtest. On a cold cache in a cloud session the Smoke Set is dominated by the ~42 s cold-download cost per race weekend (ticket 02); on a warm cache it finishes in a few seconds.
+Use it to check nothing broke end to end before running a full Backtest. On a cold cache in a cloud session the Smoke Set is dominated by the ~42 s cold-download cost per race weekend (ticket 02); on a warm cache `smoke --offline` finishes in under 10 s (an online run on the same cache takes ~35 s, mostly Spain 2022's 2018–2020 requests that the archive refuses and FastF1 never caches).
 
 ## Compare two Backtest Results
 

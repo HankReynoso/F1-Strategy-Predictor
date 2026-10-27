@@ -19,6 +19,10 @@ data is known to be missing:
 
 The rate limit needs none of this: FastF1 raises it, and the loader lets it
 through to the Backtest's wait-and-retry (ticket 17).
+
+In offline mode (ticket 36) FastF1 sends nothing, and a request it has no
+saved response for fails the same way a refusal does. So offline, missing
+data is "not downloaded", except for the seasons the archive refuses anyway.
 """
 
 from __future__ import annotations
@@ -28,6 +32,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 import requests
+
+from .offline import NOT_DOWNLOADED_REASON
 
 # Seasons the live-timing archive refuses without an F1 TV login since
 # mid-October 2026 (ADR-0006), named in the reason so a reader knows the
@@ -100,6 +106,7 @@ def missing_data_reason(
     season: int,
     problems: FastF1Problems,
     raised: BaseException | None = None,
+    offline: bool = False,
 ) -> str:
     """Why FastF1 left ``what`` without data. Call it only once the data is
     known to be missing: FastF1 also logs harmless side failures (such as the
@@ -108,15 +115,22 @@ def missing_data_reason(
     Raises :class:`FastF1FetchError` when a network error was among the
     causes, since the data may well exist. Otherwise returns an honest
     reason for a Data Quality Warning or an Excluded Race's detail.
+
+    ``offline``: the run reads saved data only, so nothing it lacks was
+    asked for. A season the archive refuses (ADR-0006) keeps its archive
+    reason, which an online run would give for the same race; anything else
+    is :data:`.offline.NOT_DOWNLOADED_REASON`.
     """
     if raised is not None:
         problems.add(raised)
+    if offline and season not in ARCHIVE_REFUSED_SEASONS:
+        return NOT_DOWNLOADED_REASON
     if problems.network:
         cause = problems.network[0]
         raise FastF1FetchError(
             f"{what}: network error ({type(cause).__name__}: {cause})"
         ) from cause
-    if problems.no_data:
+    if problems.no_data or (offline and season in ARCHIVE_REFUSED_SEASONS):
         reason = "the F1 live-timing archive returned no data for it"
         if season in ARCHIVE_REFUSED_SEASONS:
             reason += (

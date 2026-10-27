@@ -55,7 +55,9 @@ class RunMetadata:
     tuned run reads back with the same thresholds and the same
     tuning/held-out partition. `format_version` is the version of the file
     it was read from; a save always writes `FORMAT_VERSION`, so a caller
-    building metadata for a new run leaves it at the default.
+    building metadata for a new run leaves it at the default. `offline` says
+    the run read saved data only (ticket 36); a file saved before offline
+    mode existed loads as online, which every such run was.
     """
 
     label: str
@@ -65,6 +67,7 @@ class RunMetadata:
     seasons_in_scope: tuple[int, ...]
     settings: Settings
     format_version: int = FORMAT_VERSION
+    offline: bool = False
 
 
 @dataclass(frozen=True)
@@ -136,6 +139,7 @@ def _encode(result: BacktestResult, metadata: RunMetadata) -> dict:
             "uncommitted_changes": metadata.uncommitted_changes,
             "seasons_in_scope": list(metadata.seasons_in_scope),
             "settings": _encode_settings(metadata.settings),
+            "offline": metadata.offline,
         },
         "races": [_encode_race(r) for r in result.races],
         "excluded": [_encode_excluded(e) for e in result.excluded],
@@ -200,6 +204,9 @@ def _decode_metadata(data: dict, version: int) -> RunMetadata:
         seasons_in_scope=tuple(data["seasons_in_scope"]),
         settings=_decode_settings(data["settings"]),
         format_version=version,
+        # Additive and defaulted, no version bump (ADR-0005): offline mode
+        # didn't exist before ticket 36, so absent means online.
+        offline=bool(data.get("offline", False)),
     )
 
 
@@ -310,6 +317,7 @@ def _summary_text(result: BacktestResult, metadata: RunMetadata) -> str:
         + (" (uncommitted changes)" if metadata.uncommitted_changes else ""),
         f"- Seasons in scope: "
         + ", ".join(str(s) for s in metadata.seasons_in_scope),
+        "- Data: " + ("offline (saved data only)" if metadata.offline else "online"),
         "",
         "```",
     ]

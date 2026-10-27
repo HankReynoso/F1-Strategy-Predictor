@@ -15,3 +15,5 @@
 ## Comments
 
 Found during ticket 58: an old file can't be backfilled, because the figures need per-driver Candidate Strategies, which a Backtest Result never saves.
+
+**Ticket 50 (2026-10-27).** Ticket 50's criterion 8 ran a full offline Backtest of the current code at format version 3 (`--offline --label ticket-50`, saved outside the repo). Compared with `2026-10-27_baseline`, it shows only the expected version-3 warning. Re-running it with `--results-dir results/backtest` and a baseline label would satisfy this ticket and cover ticket 50's change in the same run. Ticket 24's headline figures should be refreshed from that file at the same time. Run with `--offline` (ticket 36).

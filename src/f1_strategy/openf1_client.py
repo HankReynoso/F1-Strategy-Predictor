@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .offline import NOT_DOWNLOADED_REASON, NotDownloadedError
 from .rate_limit import RateLimitWait, default_wait
 
 
@@ -108,6 +109,10 @@ class OpenF1Client:
         Base seconds for the exponential back-off used when the server
         does not supply a ``Retry-After`` header. The sequence is
         ``backoff_base * 2 ** attempt``.
+    offline
+        Serve only cached responses (ticket 36). A request that isn't
+        cached raises :class:`.offline.NotDownloadedError` instead of
+        being sent.
     """
 
     def __init__(
@@ -119,6 +124,7 @@ class OpenF1Client:
         clock: Callable[[], float] = time.monotonic,
         max_retries: int = 3,
         backoff_base: float = 1.0,
+        offline: bool = False,
     ) -> None:
         self._cache_dir = cache_dir
         self._wait = wait
@@ -126,6 +132,7 @@ class OpenF1Client:
         self._clock = clock
         self._max_retries = max_retries
         self._backoff_base = backoff_base
+        self._offline = offline
         self._second_window: deque[float] = deque()
         self._minute_window: deque[float] = deque()
         self._cache_dir.mkdir(parents=True, exist_ok=True)
@@ -141,6 +148,8 @@ class OpenF1Client:
         cached = self._read_cache(url)
         if cached is not None:
             return cached
+        if self._offline:
+            raise NotDownloadedError(f"OpenF1 {url}: {NOT_DOWNLOADED_REASON}")
         payload = self._fetch_with_retry(url)
         self._write_cache(url, payload)
         return payload

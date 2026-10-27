@@ -83,10 +83,11 @@ def test_singapore_2024_inside_the_smoke_set_scores_under_the_router() -> None:
     # "Marina Bay", once under "Singapore"), giving 31.88 s. Counted once,
     # 2022's 35.16 s median weighs 0.5 against 2023's 31.06 s at 1.0.
     assert singapore.pit_loss == pytest.approx(32.42, abs=0.01)
-    # Router-era scores (recorded 2026-10-26). FastF1-era for reference:
+    # Router-era scores after ticket 50's full allocation (recorded
+    # 2026-10-27; 4.0 / 8.0 / 2 before it). FastF1-era for reference:
     # top-1 6.5, top-3 13.75, SW hits 3.
-    assert singapore.summary.top_1_credit == pytest.approx(4.0)
-    assert singapore.summary.top_3_credit == pytest.approx(8.0)
+    assert singapore.summary.top_1_credit == pytest.approx(5.0)
+    assert singapore.summary.top_3_credit == pytest.approx(10.5)
     assert singapore.summary.stop_window_hits == 2
     assert singapore.actual_stops == 20
 

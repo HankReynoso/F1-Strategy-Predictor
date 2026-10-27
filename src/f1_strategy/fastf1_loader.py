@@ -19,6 +19,7 @@ from fastf1.exceptions import FastF1CriticalError
 from .backtest import RaceSpec
 from .fastf1_errors import missing_data_reason, watch_fastf1
 from .location_aliases import location_group
+from .offline import NOT_DOWNLOADED_REASON, NotDownloadedError
 from .openf1_loader import PastRaceSamples
 from .pit_lane_table import estimated_pit_loss, pit_lane_entry
 from .regulation_era import PIT_LOSS_PRE_ERA_MIN_SEASON, era_start
@@ -60,6 +61,43 @@ _SESSION_SHORT_NAME = {
 _SC_STATUS = {"4"}
 _VSC_STATUS = {"6", "7"}
 
+# FastF1's cache is process-wide. ``(resolved cache dir, offline)`` as last
+# set up, so loads leave it alone instead of rebuilding it (ticket 36).
+_cache_setup: tuple[str, bool] | None = None
+
+
+def set_up_cache(cache_dir: str | Path = ".cache/fastf1", *, offline: bool = False) -> None:
+    """Enable FastF1's cache for a run, once, in online or offline mode.
+
+    Every command calls this before its first load. ``enable_cache`` builds
+    a new HTTP session, which turns FastF1's offline mode off again (ticket
+    42), so loads only call it through :func:`_ensure_cache`, which keeps
+    this setup. Offline, FastF1 serves saved responses, stale ones included,
+    and sends no request at all.
+    """
+    global _cache_setup
+    cache_dir = Path(cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    fastf1.Cache.enable_cache(str(cache_dir))
+    if offline:
+        # A new session starts online, so only offline needs saying.
+        fastf1.Cache.offline_mode(True)
+    _cache_setup = (str(cache_dir.resolve()), offline)
+
+
+def is_offline() -> bool:
+    """True while the run's FastF1 cache is set up offline."""
+    return _cache_setup is not None and _cache_setup[1]
+
+
+def _ensure_cache(cache_dir: str | Path) -> None:
+    """Enable the cache at ``cache_dir`` unless it already is, keeping the
+    run's offline mode. A direct caller that never called
+    :func:`set_up_cache` gets an online cache, as before."""
+    if _cache_setup is not None and _cache_setup[0] == str(Path(cache_dir).resolve()):
+        return
+    set_up_cache(cache_dir, offline=is_offline())
+
 
 def load_weekend(
     season: int,
@@ -90,11 +128,12 @@ def load_weekend(
     if history_min_season is None:
         history_min_season = era_start(season)
     cache_dir = Path(cache_dir)
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    fastf1.Cache.enable_cache(str(cache_dir))
+    _ensure_cache(cache_dir)
 
     race, reason = _load_session(season, event, "R", f"{season} {event} race")
     if race is None:
+        if is_offline():
+            raise NotDownloadedError(f"FastF1 {season} {event} race: {reason}")
         raise ValueError(f"{season} {event}: the race has no lap data ({reason})")
 
     event_meta = race.event
@@ -162,10 +201,15 @@ def list_season(
     excluded. A sprint weekend is anything whose format is not
     `"conventional"`.
     """
-    cache_dir = Path(cache_dir)
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    fastf1.Cache.enable_cache(str(cache_dir))
-    schedule = fastf1.get_event_schedule(season, include_testing=False)
+    _ensure_cache(cache_dir)
+    try:
+        schedule = fastf1.get_event_schedule(season, include_testing=False)
+    except ValueError as error:
+        if is_offline():
+            raise NotDownloadedError(
+                f"FastF1 {season} schedule: {NOT_DOWNLOADED_REASON}"
+            ) from error
+        raise
     specs: list[RaceSpec] = []
     for _, row in schedule.sort_values("RoundNumber").iterrows():
         event_format = str(row.get("EventFormat", "conventional"))
@@ -235,10 +279,12 @@ def _load_session(season: int, event, kind: str, what: str):
         except FastF1CriticalError:
             raise
         except Exception as error:
-            return None, missing_data_reason(what, season, problems, raised=error)
+            return None, missing_data_reason(
+                what, season, problems, raised=error, offline=is_offline()
+            )
     if hasattr(session, "_laps"):
         return session, None
-    return None, missing_data_reason(what, season, problems)
+    return None, missing_data_reason(what, season, problems, offline=is_offline())
 
 
 def _schedule(season: int):
@@ -255,7 +301,11 @@ def _schedule(season: int):
             raise
         except Exception as error:
             return None, missing_data_reason(
-                f"FastF1 {season} schedule", season, problems, raised=error
+                f"FastF1 {season} schedule",
+                season,
+                problems,
+                raised=error,
+                offline=is_offline(),
             )
 
 
@@ -506,7 +556,7 @@ def _past_races_at_circuit(
     The race being predicted is never read (season range stops at
     `race_season - 1`).
     """
-    fastf1.Cache.enable_cache(str(cache_dir))
+    _ensure_cache(cache_dir)
     # Cross-season Location aliases: FastF1 occasionally renames a venue
     # between seasons (e.g. Monte Carlo → Monaco in 2022, Miami → Miami
     # Gardens in 2025). The alias group lists every string that refers to
@@ -715,9 +765,7 @@ def load_past_race_samples(
     Backtest waits and retries (ticket 17), and a network error raises
     :class:`.fastf1_errors.FastF1FetchError` (ticket 40).
     """
-    cache_dir = Path(cache_dir)
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    fastf1.Cache.enable_cache(str(cache_dir))
+    _ensure_cache(cache_dir)
     schedule, reason = _schedule(season)
     if schedule is None:
         return PastRaceSamples(pit_losses=(), stint_rates=(), note=reason)

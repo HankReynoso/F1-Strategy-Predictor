@@ -121,7 +121,7 @@ How strategy choices shift with a driver's circumstances, such as starting posit
 Running Strategy Predictions on past races and scoring them against the Strategies drivers actually ran.
 
 **Excluded Race**:
-A race weekend in a Backtest's scope that produced no scores, because it was refused (not a Dry Race), failed, its data couldn't be loaded, or its data couldn't be fetched (FastF1's rate limit still hit after waiting, or a network error on the race, a session or a past race it reads). Every Excluded Race is listed with its reason, and a fetch failure is distinct from a genuine data-unavailable failure.
+A race weekend in a Backtest's scope that produced no scores, because it was refused (not a Dry Race), failed, its data couldn't be loaded, or its data couldn't be fetched (FastF1's rate limit still hit after waiting, or a network error on the race, a session or a past race it reads), or, in an Offline Run, it was never downloaded. Every Excluded Race is listed with its reason, and a fetch failure and a race that wasn't downloaded are each distinct from a genuine data-unavailable failure.
 _Avoid_: skipped race, failed race
 
 **Cancelled Race**:
@@ -129,7 +129,7 @@ A round on the calendar that was called off and never took place (2023 Emilia Ro
 _Avoid_: skipped race, missing race
 
 **Data Quality Warning**:
-A note on a scored race in a Backtest Result saying where its data was incomplete, why, and what was done about it: a practice, sprint or qualifying session that couldn't be loaded, a past season at the circuit that gave no usable samples (such as 2018–2020, which the timing archive refuses), or source rows dropped because a field was empty. The race is still scored; a race whose data can't be used at all, or couldn't be fetched, is an Excluded Race instead.
+A note on a scored race in a Backtest Result saying where its data was incomplete, why, and what was done about it: a practice, sprint or qualifying session that couldn't be loaded, a past season at the circuit that gave no usable samples (such as 2018–2020, which the timing archive refuses), source rows dropped because a field was empty, or, in an Offline Run, a past race or session that was never downloaded. The race is still scored; a race whose data can't be used at all, or couldn't be fetched, is an Excluded Race instead.
 _Avoid_: history warning (it covers more than history), data error
 
 **Held-out Season**:
@@ -139,6 +139,10 @@ _Avoid_: test set, validation season
 **Smoke Set**:
 A small fixed set of races covering every path through the model, run as a quick Backtest to check nothing broke: Singapore, Monza, Baku, Austin and Jeddah 2024, plus Spain 2022 (the conventional, green pre-era Pit Loss path, ADR-0004 exception).
 _Avoid_: sample races, quick set
+
+**Offline Run**:
+A Backtest, Smoke Set or single-race run that reads only data already downloaded and never contacts FastF1 or OpenF1. On the same saved data it gives the same results as an online run; anything it lacks is reported as not downloaded.
+_Avoid_: cached run, cache-only mode
 
 **Backtest Result**:
 The saved record of one Backtest run: its scores overall and by breakdown, each scored race's Data Quality Warnings, its Excluded Races, the settings used and the code version.
