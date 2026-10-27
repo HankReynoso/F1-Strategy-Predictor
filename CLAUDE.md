@@ -17,6 +17,10 @@ Every session that writes or changes code leaves a written record in the repo, n
 - **`docs/adr/`**: record any decision that is hard to reverse, surprising without context, and the result of a real trade-off (see `docs/agents/domain.md`).
 - **New tickets**: write follow-up work the session discovered as new ticket files in the same `issues/` folder, with `Status: needs-triage`.
 
+## Choosing between options
+
+Any comparison used to choose between modelling options, settings or rules is judged on the Tuning Seasons (2022–2024) only. Report the Held-out Season (2025) alongside, but never use it to decide, so it stays a fair test of the finished model. Record which seasons each decision was judged on.
+
 ## Agent skills
 
 ### Issue tracker
