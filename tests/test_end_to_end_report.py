@@ -209,14 +209,15 @@ def test_header_names_the_compound_that_leaned_on_circuit_history():
         *long_run("VER", "VER-S1", S, [90.0 + 0.1 * i for i in range(8)]),
         *long_run("VER", "VER-M1", M, [90.0 + 0.05 * i for i in range(8)], first_lap=20),
     ]
-    history = {H: HistoricalDegradation(rate=0.08, seasons=(2022, 2023), stint_count=7)}
+    # Below the 0.05 Medium, so Compound ordering (ticket 62) leaves it alone.
+    history = {H: HistoricalDegradation(rate=0.03, seasons=(2022, 2023), stint_count=7)}
     wkd = weekend(laps, {"VER": "Red Bull Racing"}, historical_degradation=history)
     predictions = predict(wkd, Settings(fuel_effect_s_per_lap=0.0))
 
     header = format_header(wkd.pre_race, Settings(), predictions)
 
     assert "Historical Degradation fallbacks:" in header
-    assert "Hard: 0.080 s/lap (circuit history: seasons 2022, 2023, 7 Stints)" in header
+    assert "Hard: 0.030 s/lap (circuit history: seasons 2022, 2023, 7 Stints)" in header
 
 
 def test_header_names_the_compound_that_fell_to_the_next_softer_bound():

@@ -49,7 +49,7 @@ The 2023 trial Tyre Allocation of 11 sets (4 Soft, 4 Medium, 3 Hard) instead of 
 _Avoid_: ATA (fine in speech), reduced allocation
 
 **Degradation**:
-The lap time a Compound loses per lap as it wears.
+The lap time a Compound loses per lap as it wears. A harder Compound wears no faster than a softer one: each team's Degradation is ordered Soft ≥ Medium ≥ Hard.
 _Avoid_: deg (fine in speech), tyre wear, drop-off
 
 **Compound Pace**:

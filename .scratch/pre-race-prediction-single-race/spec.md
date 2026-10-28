@@ -97,7 +97,7 @@ This is the thin end-to-end slice that later specs build on: the full Backtest a
 - **Modules (deep, with small interfaces):**
   - **Weekend loader (FastF1 adapter).** Turns a FastF1 race weekend (season + event) into the race weekend description, using FastF1's on-disk cache. It's the only module that knows about FastF1, and it's also where previous seasons' races at the circuit are read for Pit Loss.
   - **Run classifier.** Splits practice laps into Long Runs and Push Laps per driver and Tyre Set, using the consistency-based Long Run rule and the slow–fast–slow Push Lap pattern. Sprint race Stints become Long Runs.
-  - **Degradation model.** Fuel-corrects Long Run laps and fits a per-lap Degradation rate per team per Compound. It falls back to the team's Push Lap fall-off, then the field average, and records which source each estimate came from.
+  - **Degradation model.** Fuel-corrects Long Run laps and fits a per-lap Degradation rate per team per Compound. It falls back to the team's Push Lap fall-off, then the field average, and records which source each estimate came from. Each team's rates are then put in order, Soft ≥ Medium ≥ Hard, with an inverted pair or run sharing its plain mean (full-backtest ticket 62, ADR-0003).
   - **Pit Loss estimator.** Measures typical time lost per stop at the circuit from previous seasons' races.
   - **Tyre Allocation tracker.** Works out each driver's Remaining Sets (by Compound, new vs used) from sets used before the race.
   - **Strategy generator.** Enumerates legal Strategies (1–3 stops, at least two different dry Compounds) and drops those a driver can't run with their Remaining Sets.

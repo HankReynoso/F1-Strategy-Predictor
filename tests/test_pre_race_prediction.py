@@ -723,11 +723,13 @@ def test_short_slightly_negative_fit_gets_positive_rate_pulled_toward_field_aver
     # is 50/50 toward the leave-one-out field average of 0.1, so A lands near
     # 0.05, clearly positive — not stuck at the old zero clamp.
     teams = {"A1": "Alpha", "B1": "Bravo", "C1": "Charlie"}
+    # Alpha's Medium and Hard sit below its shrunk Soft, so Compound ordering
+    # (ticket 62) leaves the Soft as shrinkage made it.
     short_negative = long_run("A1", "A-S1", S, [91.00, 90.95, 90.90, 90.85])
     laps = [
         *short_negative,
-        *degrading_run("A1", "A-M1", M, 0.07, first_lap=20),
-        *degrading_run("A1", "A-H1", H, 0.04, first_lap=40),
+        *degrading_run("A1", "A-M1", M, 0.03, first_lap=20),
+        *degrading_run("A1", "A-H1", H, 0.02, first_lap=40),
         *degrading_run("B1", "B-S1", S, 0.10),
         *degrading_run("B1", "B-M1", M, 0.07, first_lap=20),
         *degrading_run("B1", "B-H1", H, 0.04, first_lap=40),
@@ -1026,8 +1028,9 @@ def test_history_sourced_rate_used_when_no_team_runs_the_compound():
     # estimate equals the historical rate, with CIRCUIT_HISTORY as the source.
     teams = {"VER": "Red Bull Racing", "LEC": "Ferrari"}
     laps = [*_soft_and_medium_only("VER", "VER"), *_soft_and_medium_only("LEC", "LEC")]
+    # Below the 0.05 Medium, so Compound ordering (ticket 62) leaves it alone.
     history = {
-        H: HistoricalDegradation(rate=0.08, seasons=(2023,), stint_count=5),
+        H: HistoricalDegradation(rate=0.03, seasons=(2023,), stint_count=5),
     }
 
     predictions = predict(weekend(laps, teams, historical_degradation=history), NO_FUEL)
@@ -1035,7 +1038,7 @@ def test_history_sourced_rate_used_when_no_team_runs_the_compound():
     for driver in teams:
         hard = predictions[driver].team_degradation[H]
         assert hard.source == DegradationSource.CIRCUIT_HISTORY
-        assert hard.rate == pytest.approx(0.08, abs=1e-9)
+        assert hard.rate == pytest.approx(0.03, abs=1e-9)
 
 
 def test_next_softer_bound_used_when_no_history():
@@ -1082,7 +1085,7 @@ def test_historical_degradation_never_uses_the_race_being_predicted():
     # supplied history. Changing race.stints doesn't change the Hard rate.
     teams = {"VER": "Red Bull Racing"}
     laps = _soft_and_medium_only("VER", "VER")
-    history = {H: HistoricalDegradation(rate=0.08, seasons=(2023,), stint_count=5)}
+    history = {H: HistoricalDegradation(rate=0.03, seasons=(2023,), stint_count=5)}
     leaky_race_stints = [
         Stint(driver="VER", compound=M, start_lap=1, end_lap=25),
         Stint(driver="VER", compound=H, start_lap=26, end_lap=57),
@@ -1102,7 +1105,7 @@ def test_historical_degradation_never_uses_the_race_being_predicted():
     )["VER"]
 
     assert with_race.team_degradation[H] == without_race.team_degradation[H]
-    assert with_race.team_degradation[H].rate == pytest.approx(0.08, abs=1e-9)
+    assert with_race.team_degradation[H].rate == pytest.approx(0.03, abs=1e-9)
 
 
 def test_refuses_cleanly_when_no_fallback_applies():
@@ -1128,12 +1131,108 @@ def test_history_is_fuel_corrected_the_same_way_as_practice():
     # loader's job).
     teams = {"VER": "Red Bull Racing"}
     laps = _soft_and_medium_only("VER", "VER")
-    history = {H: HistoricalDegradation(rate=0.11, seasons=(2022, 2023), stint_count=7)}
+    # Below the 0.08 Medium, so Compound ordering (ticket 62) leaves it alone.
+    history = {H: HistoricalDegradation(rate=0.06, seasons=(2022, 2023), stint_count=7)}
 
     # Default fuel setting; the predictor must not change the rate.
     prediction = predict(
         weekend(laps, teams, historical_degradation=history),
     )["VER"]
 
-    assert prediction.team_degradation[H].rate == pytest.approx(0.11, abs=1e-9)
+    assert prediction.team_degradation[H].rate == pytest.approx(0.06, abs=1e-9)
     assert prediction.team_degradation[H].source == DegradationSource.CIRCUIT_HISTORY
+
+
+# --- Ticket 62: Compound ordering per team ------------------------------------
+# After shrinkage, each team's dry rates are put in order, Soft ≥ Medium ≥
+# Hard (ADR-0003). An inverted pair or run shares its plain mean.
+
+ONE_TEAM = {"VER": "Red Bull Racing"}
+
+
+def _one_team_practice(soft: float, medium: float, hard: float) -> list[Lap]:
+    # One team only, so there is no field average to shrink towards and each
+    # rate is exactly its own fit.
+    return standard_practice(soft=soft, medium=medium, hard=hard)
+
+
+def test_an_inverted_medium_hard_pair_shares_its_mean():
+    prediction = predict(weekend(_one_team_practice(0.12, 0.04, 0.08), ONE_TEAM))["VER"]
+
+    rates = {c: prediction.team_degradation[c].rate for c in (S, M, H)}
+    assert rates[S] == pytest.approx(0.12, abs=1e-9)
+    assert rates[M] == pytest.approx(0.06, abs=1e-9)
+    assert rates[H] == pytest.approx(0.06, abs=1e-9)
+
+
+def test_ordering_keeps_each_compounds_degradation_source():
+    # Soft is a Long Run, Medium a Push Lap fit below the Hard Long Run: the
+    # pooled Medium and Hard keep their own sources.
+    laps = [
+        *degrading_run("VER", "VER-S1", S, 0.12),
+        *push_lap_set("VER", "VER-M1", M, [92.0, 89.0, 92.0, 89.0, 92.0], first_lap=20),
+        *degrading_run("VER", "VER-H1", H, 0.08, first_lap=40),
+    ]
+    prediction = predict(weekend(laps, ONE_TEAM))["VER"]
+
+    degradation = prediction.team_degradation
+    assert degradation[S].source == DegradationSource.LONG_RUNS
+    assert degradation[M].source == DegradationSource.PUSH_LAPS
+    assert degradation[H].source == DegradationSource.LONG_RUNS
+    assert degradation[M].rate == pytest.approx(degradation[H].rate, abs=1e-9)
+    assert degradation[M].rate < 0.08
+
+
+def test_already_ordered_rates_are_untouched():
+    prediction = predict(weekend(_one_team_practice(0.12, 0.07, 0.04), ONE_TEAM))["VER"]
+
+    rates = {c: prediction.team_degradation[c].rate for c in (S, M, H)}
+    assert rates == pytest.approx({S: 0.12, M: 0.07, H: 0.04}, abs=1e-9)
+
+
+def test_an_inverted_run_of_three_compounds_shares_one_mean():
+    # Soft below Medium pools to 0.03, which is still below the Hard, so all
+    # three pool to (0.0 + 0.06 + 0.06) / 3 = 0.04.
+    prediction = predict(weekend(_one_team_practice(0.0, 0.06, 0.06), ONE_TEAM))["VER"]
+
+    for compound in (S, M, H):
+        assert prediction.team_degradation[compound].rate == pytest.approx(0.04, abs=1e-9)
+
+
+def test_ordering_pools_raw_rates_before_the_clamp_at_zero():
+    # Soft fits to −0.04. Pooled unclamped: Soft and Medium share 0.01, below
+    # the Hard's 0.02, so all three share 0.04 / 3. Clamping first would give
+    # Soft and Medium 0.03 and leave the Hard at 0.02.
+    prediction = predict(weekend(_one_team_practice(-0.04, 0.06, 0.02), ONE_TEAM))["VER"]
+
+    for compound in (S, M, H):
+        assert prediction.team_degradation[compound].rate == pytest.approx(
+            0.04 / 3, abs=1e-9
+        )
+
+
+def test_ordering_also_covers_a_teams_field_level_fallback():
+    # Red Bull ran no Hard; its Hard comes from Circuit History at 0.11, above
+    # its own Medium Long Run (0.08 with the fuel effect), so they share 0.095.
+    laps = _soft_and_medium_only("VER", "VER")
+    history = {H: HistoricalDegradation(rate=0.11, seasons=(2023,), stint_count=5)}
+
+    prediction = predict(weekend(laps, ONE_TEAM, historical_degradation=history))["VER"]
+
+    assert prediction.team_degradation[M].rate == pytest.approx(0.095, abs=1e-9)
+    assert prediction.team_degradation[H].rate == pytest.approx(0.095, abs=1e-9)
+    assert prediction.team_degradation[H].source == DegradationSource.CIRCUIT_HISTORY
+
+
+def test_a_pooled_soft_no_longer_makes_hard_to_soft_the_favourite():
+    # A near-zero Soft fit (0.02) under a 0.08 Medium made the Soft look free,
+    # so H → S was the top pick. Pooled, Soft and Medium share 0.05, above the
+    # Hard's 0.04: H → S only ties H → M, which ranks first on the tie-break.
+    prediction = predict(weekend(_one_team_practice(0.02, 0.08, 0.04), ONE_TEAM))["VER"]
+
+    assert prediction.team_degradation[S].rate == pytest.approx(0.05, abs=1e-9)
+    top = prediction.candidates[0].strategy.compounds
+    assert top[-1] != S
+    assert candidate(prediction, H, S).simulated_race_time == pytest.approx(
+        candidate(prediction, H, M).simulated_race_time
+    )

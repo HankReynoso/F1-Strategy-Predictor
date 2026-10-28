@@ -29,6 +29,12 @@ negative) and blending, the near-zero team is self-corrected by the pull
 toward the field without poisoning the field. The shrunk value is
 clamped at zero so Simulated Race Time never sees a negative rate.
 
+**Compound ordering.** Before the clamp, each team's three dry rates are
+put in order, Soft ≥ Medium ≥ Hard: a harder Compound wears no faster
+(ADR-0003). An inverted pair or run shares its plain mean (ticket 62).
+The field-level fallbacks themselves are not ordered, only the team rates
+that read them.
+
 Each estimate records which source its own data came from (or
 `FIELD_AVERAGE` when the team has no data on the Compound).
 """
@@ -98,7 +104,8 @@ def team_degradation(
     k = settings.degradation_shrinkage_laps
     result: dict[str, dict[Compound, DegradationEstimate]] = {}
     for team in set(pre_race.teams.values()):
-        per_compound: dict[Compound, DegradationEstimate] = {}
+        # Unclamped (rate, source) per Compound, ordered before the clamp.
+        per_compound: dict[Compound, tuple[float, DegradationSource]] = {}
         for compound in DRY_COMPOUNDS:
             own = team_raw.get((team, compound))
             others = [
@@ -114,7 +121,7 @@ def team_degradation(
                     if field_avg is not None
                     else raw
                 )
-                per_compound[compound] = DegradationEstimate(max(0.0, blended), source)
+                per_compound[compound] = (blended, source)
                 continue
             fallback = field_fallback.get(compound)
             if fallback is None:
@@ -124,10 +131,27 @@ def team_degradation(
                     f"and no softer Compound to bound {compound.name.title()} by; "
                     "cannot estimate Degradation."
                 )
-            rate, source = fallback
-            per_compound[compound] = DegradationEstimate(max(0.0, rate), source)
-        result[team] = per_compound
+            per_compound[compound] = fallback
+        ordered = _in_compound_order([per_compound[c][0] for c in DRY_COMPOUNDS])
+        result[team] = {
+            compound: DegradationEstimate(max(0.0, rate), per_compound[compound][1])
+            for compound, rate in zip(DRY_COMPOUNDS, ordered)
+        }
     return result
+
+
+def _in_compound_order(rates: list[float]) -> list[float]:
+    """Rates in softer→harder order, made non-increasing (a harder Compound
+    wears no faster, ADR-0003) by pool-adjacent-violators: each inverted pair
+    or run is replaced by its plain mean, one vote per Compound (ticket 62).
+    """
+    blocks: list[tuple[float, int]] = []  # (mean rate, Compounds pooled)
+    for rate in rates:
+        blocks.append((rate, 1))
+        while len(blocks) > 1 and blocks[-2][0] < blocks[-1][0]:
+            (softer, a), (harder, b) = blocks[-2], blocks[-1]
+            blocks[-2:] = [((softer * a + harder * b) / (a + b), a + b)]
+    return [rate for rate, count in blocks for _ in range(count)]
 
 
 def _field_fallbacks(
